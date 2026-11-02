@@ -1,0 +1,64 @@
+body {
+    background-color: #f4f6f9;
+    font-family: Arial, sans-serif;
+}
+
+.dashboard-card {
+    border: none;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+    margin-bottom: 15px;
+}
+
+.dashboard-card h6 {
+    color: #555;
+    font-weight: 600;
+}
+
+.dashboard-card h2 {
+    font-weight: bold;
+    margin-top: 10px;
+}
+
+.status-green {
+    border-left: 5px solid #198754;
+}
+
+.status-yellow {
+    border-left: 5px solid #ffc107;
+}
+
+.status-red {
+    border-left: 5px solid #dc3545;
+}
+
+.status-badge {
+    padding: 8px 12px;
+    font-size: 12px;
+    border-radius: 20px;
+}
+
+.badge-green {
+    background-color: #198754;
+    color: white;
+}
+
+.badge-yellow {
+    background-color: #ffc107;
+    color: #212529;
+}
+
+.badge-red {
+    background-color: #dc3545;
+    color: white;
+}
+
+.table th {
+    font-size: 13px;
+    text-transform: uppercase;
+    color: #555;
+}
+
+.table td {
+    font-size: 14px;
+}

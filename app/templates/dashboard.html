@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+
+    <div>
+        <h2>Parts Tracking Dashboard</h2>
+        <p class="text-muted">
+            Monitor outstanding parts for all work items.
+        </p>
+    </div>
+
+    <button class="btn btn-primary" disabled>
+        + New Work Item
+    </button>
+
+</div>
+
+
+<!-- Dashboard Counters -->
+
+<div class="row mb-4">
+
+    <div class="col-md-3">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6>Total Work Items</h6>
+                <h2>{{ total_items }}</h2>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="card dashboard-card status-green">
+            <div class="card-body">
+                <h6>All Parts Received</h6>
+                <h2>{{ green_count }}</h2>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="card dashboard-card status-yellow">
+            <div class="card-body">
+                <h6>Partially Received</h6>
+                <h2>{{ yellow_count }}</h2>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="card dashboard-card status-red">
+            <div class="card-body">
+                <h6>Nothing Received</h6>
+                <h2>{{ red_count }}</h2>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+
+<!-- Work Items Table -->
+
+<div class="card shadow-sm">
+
+    <div class="card-header bg-white">
+        <h5 class="mb-0">Active Work Items</h5>
+    </div>
+
+    <div class="card-body">
+
+        <div class="table-responsive">
+
+            <table class="table table-hover align-middle">
+
+                <thead class="table-light">
+
+                    <tr>
+                        <th>Work Item #</th>
+                        <th>Type</th>
+                        <th>Customer</th>
+                        <th>Parts Ordered</th>
+                        <th>Parts Received</th>
+                        <th>Status</th>
+                    </tr>
+
+                </thead>
+
+                <tbody>
+
+                    {% for item in work_items %}
+
+                    <tr>
+
+                        <td class="fw-bold">
+                            {{ item.number }}
+                        </td>
+
+                        <td>
+                            {{ item.type }}
+                        </td>
+
+                        <td>
+                            {{ item.customer }}
+                        </td>
+
+                        <td>
+                            {{ item.parts_ordered }}
+                        </td>
+
+                        <td>
+                            {{ item.parts_received }}
+                        </td>
+
+                        <td>
+
+                            <span class="badge status-badge
+                                {% if item.status == 'Green' %}
+                                    badge-green
+                                {% elif item.status == 'Yellow' %}
+                                    badge-yellow
+                                {% else %}
+                                    badge-red
+                                {% endif %}">
+
+                                {% if item.status == 'Green' %}
+                                    All Received
+                                {% elif item.status == 'Yellow' %}
+                                    Partially Received
+                                {% else %}
+                                    Nothing Received
+                                {% endif %}
+
+                            </span>
+
+                        </td>
+
+                    </tr>
+
+                    {% endfor %}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}
