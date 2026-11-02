@@ -62,3 +62,11 @@ body {
 .table td {
     font-size: 14px;
 }
+
+.notes-cell {
+    min-width: 250px;
+    max-width: 400px;
+    white-space: normal;
+    overflow-wrap: break-word;
+    color: #555;
+}

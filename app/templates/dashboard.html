@@ -1,3 +1,4 @@
+
 {% extends "base.html" %}
 
 {% block content %}
@@ -75,18 +76,23 @@
 
             <table class="table table-hover align-middle">
 
+
                 <thead class="table-light">
 
                     <tr>
                         <th>Work Item #</th>
                         <th>Type</th>
                         <th>Customer</th>
+                        <th>Technician</th>
                         <th>Parts Ordered</th>
                         <th>Parts Received</th>
                         <th>Status</th>
+                        <th>Notes</th>
+                        <th>Actions</th>
                     </tr>
 
                 </thead>
+
 
                 <tbody>
 
@@ -104,6 +110,10 @@
 
                         <td>
                             {{ item.customer }}
+                        </td>
+
+                        <td>
+                            {{ item.technician }}
                         </td>
 
                         <td>
@@ -136,6 +146,26 @@
                             </span>
 
                         </td>
+
+                        <td class="notes-cell">
+                            {{ item.notes }}
+                        </td>
+
+                        <td>
+                            <form
+                                method="POST"
+                                action="{{ url_for('main.archive_work_item',
+                                                work_item_number=item.number) }}"
+                                onsubmit="return confirm('Are you sure you want to archive this work item?');">
+
+                                <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                    <i class="bi bi-archive"></i>
+                                    Archive
+                                </button>
+
+                            </form>
+                        </td>
+
 
                     </tr>
 
