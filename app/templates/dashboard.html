@@ -74,7 +74,12 @@
 
                         <tr>
                             <td>
-                                <strong>{{ item.number }}</strong>
+                                <strong>
+                                    <a href="{{ url_for('main.work_item_details', item_id=item.id) }}"
+                                    class="text-decoration-none">
+                                        {{ item.number }}
+                                    </a>
+                                </strong>
                             </td>
 
                             <td>{{ item.type }}</td>

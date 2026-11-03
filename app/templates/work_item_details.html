@@ -1,0 +1,176 @@
+
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="container-fluid mt-4">
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+
+        <div>
+            <h2>Work Item {{ work_item.number }}</h2>
+            <p class="text-muted mb-0">
+                {{ work_item.type }} - {{ work_item.customer }}
+            </p>
+        </div>
+
+        <a href="{{ url_for('main.dashboard') }}"
+           class="btn btn-secondary">
+            Back to Dashboard
+        </a>
+
+    </div>
+
+    <div class="card shadow-sm mb-4">
+
+        <div class="card-header">
+            <h5 class="mb-0">Work Item Details</h5>
+        </div>
+
+        <div class="card-body">
+
+            <div class="row">
+
+                <div class="col-md-4 mb-3">
+                    <strong>Work Item Number</strong>
+                    <div>{{ work_item.number }}</div>
+                </div>
+
+                <div class="col-md-4 mb-3">
+                    <strong>Type</strong>
+                    <div>{{ work_item.type }}</div>
+                </div>
+
+                <div class="col-md-4 mb-3">
+                    <strong>Customer</strong>
+                    <div>{{ work_item.customer }}</div>
+                </div>
+
+                <div class="col-md-4 mb-3">
+                    <strong>Technician</strong>
+                    <div>{{ work_item.technician or "-" }}</div>
+                </div>
+
+                <div class="col-md-8 mb-3">
+                    <strong>Notes</strong>
+                    <div>{{ work_item.notes or "-" }}</div>
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <div class="card shadow-sm">
+
+        <div class="card-header">
+            <h5 class="mb-0">Supplier Orders & Parts</h5>
+        </div>
+
+
+<div class="card-body">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <h6 class="mb-3">Add Supplier Order</h6>
+
+    <form method="POST"
+          action="{{ url_for('main.add_parts_order', item_id=work_item.id) }}">
+
+        <div class="row">
+
+            <div class="col-md-4 mb-3">
+                <label class="form-label">Supplier *</label>
+
+                <input type="text"
+                       name="supplier"
+                       class="form-control"
+                       placeholder="GM, NAPA, etc."
+                       required>
+            </div>
+
+            <div class="col-md-4 mb-3">
+                <label class="form-label">Supplier Order Number</label>
+
+                <input type="text"
+                       name="order_number"
+                       class="form-control"
+                       placeholder="Enter order number">
+            </div>
+
+            <div class="col-md-4 mb-3">
+                <label class="form-label">Order Notes</label>
+
+                <input type="text"
+                       name="notes"
+                       class="form-control"
+                       placeholder="Optional notes">
+            </div>
+
+        </div>
+
+        <button type="submit" class="btn btn-primary">
+            Add Supplier Order
+        </button>
+
+    </form>
+
+    <hr class="my-4">
+
+    <h6 class="mb-3">Existing Supplier Orders</h6>
+
+    {% for order in work_item.parts_orders %}
+
+        <div class="card mb-3">
+
+            <div class="card-header">
+
+                <strong>{{ order.supplier }}</strong>
+
+                {% if order.order_number %}
+                    <span class="text-muted">
+                        | Order #{{ order.order_number }}
+                    </span>
+                {% endif %}
+
+            </div>
+
+            <div class="card-body">
+
+                {% if order.notes %}
+                    <p>{{ order.notes }}</p>
+                {% endif %}
+
+                <p class="text-muted mb-0">
+                    Parts will be added to this order next.
+                </p>
+
+            </div>
+
+        </div>
+
+    {% else %}
+
+        <p class="text-muted">
+            No supplier orders have been added yet.
+        </p>
+
+    {% endfor %}
+
+</div>
+
+
+    </div>
+
+</div>
+
+{% endblock %}

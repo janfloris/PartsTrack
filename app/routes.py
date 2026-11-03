@@ -9,7 +9,7 @@ from flask import (
 )
 
 from app import db
-from app.models import WorkItem
+from app.models import WorkItem, PartsOrder, PartLine
 
 main = Blueprint("main", __name__)
 
@@ -28,6 +28,44 @@ def dashboard():
         total_items=total_items
     )
 
+@main.route("/work-item/<int:item_id>")
+def work_item_details(item_id):
+    work_item = db.get_or_404(WorkItem, item_id)
+
+    return render_template(
+        "work_item_details.html",
+        work_item=work_item
+    )
+
+@main.route("/work-item/<int:item_id>/add-order", methods=["POST"])
+def add_parts_order(item_id):
+    work_item = db.get_or_404(WorkItem, item_id)
+
+    supplier = request.form.get("supplier", "").strip()
+    order_number = request.form.get("order_number", "").strip()
+    notes = request.form.get("notes", "").strip()
+
+    if not supplier:
+        flash("Supplier is required.", "danger")
+        return redirect(
+            url_for("main.work_item_details", item_id=item_id)
+        )
+
+    parts_order = PartsOrder(
+        work_item_id=work_item.id,
+        supplier=supplier,
+        order_number=order_number,
+        notes=notes
+    )
+
+    db.session.add(parts_order)
+    db.session.commit()
+
+    flash("Supplier order added successfully!", "success")
+
+    return redirect(
+        url_for("main.work_item_details", item_id=item_id)
+    )
 
 @main.route("/new-work-item", methods=["GET", "POST"])
 def new_work_item():
