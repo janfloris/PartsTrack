@@ -13,8 +13,6 @@ from app.models import WorkItem, PartsOrder, PartLine
 
 main = Blueprint("main", __name__)
 
-
-
 @main.route("/")
 def dashboard():
     work_items = WorkItem.query.filter_by(
@@ -27,6 +25,7 @@ def dashboard():
     yellow_count = 0
     red_count = 0
 
+    # Calculate receiving status and counts for all active Work Items
     for item in work_items:
 
         total_ordered = sum(
@@ -59,13 +58,38 @@ def dashboard():
         else:
             red_count += 1
 
+    # Get search and status filter values
+    search_query = request.args.get("search", "").strip().lower()
+    status_filter = request.args.get("status", "").strip()
+
+    # Filter Work Items by search text
+    filtered_items = work_items
+
+    if search_query:
+        filtered_items = [
+            item for item in filtered_items
+            if search_query in str(item.number).lower()
+            or search_query in (item.customer or "").lower()
+            or search_query in (item.technician or "").lower()
+            or search_query in (item.type or "").lower()
+        ]
+
+    # Filter Work Items by receiving status
+    if status_filter in ["Red", "Yellow", "Green"]:
+        filtered_items = [
+            item for item in filtered_items
+            if item.receiving_status == status_filter
+        ]
+
     return render_template(
         "dashboard.html",
-        work_items=work_items,
+        work_items=filtered_items,
         total_items=total_items,
         green_count=green_count,
         yellow_count=yellow_count,
-        red_count=red_count
+        red_count=red_count,
+        search_query=search_query,
+        status_filter=status_filter
     )
 
 
