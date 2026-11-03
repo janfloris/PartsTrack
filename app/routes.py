@@ -1,109 +1,75 @@
 
-from flask import Blueprint, render_template, redirect, url_for, session
+from flask import (
+    Blueprint,
+    render_template,
+    redirect,
+    url_for,
+    request,
+    flash
+)
+
+from app import db
+from app.models import WorkItem
 
 main = Blueprint("main", __name__)
 
 
-# Sample work items
-work_items = [
-    {
-        "number": "105432",
-        "type": "Work Order",
-        "customer": "John Smith",
-        "technician": "Mike",
-        "parts_ordered": 4,
-        "parts_received": 4,
-        "status": "Green",
-        "notes": "All parts received. Ready for repair."
-    },
-    {
-        "number": "205123",
-        "type": "Estimate",
-        "customer": "Jane Doe",
-        "technician": "David",
-        "parts_ordered": 6,
-        "parts_received": 3,
-        "status": "Yellow",
-        "notes": "Waiting for remaining parts from GM."
-    },
-    {
-        "number": "305123",
-        "type": "Invoice",
-        "customer": "Fleet Customer",
-        "technician": "Chris",
-        "parts_ordered": 2,
-        "parts_received": 0,
-        "status": "Red",
-        "notes": "Parts have been ordered."
-    },
-    {
-        "number": "405123",
-        "type": "Quote",
-        "customer": "Customer A",
-        "technician": "Mike",
-        "parts_ordered": 5,
-        "parts_received": 1,
-        "status": "Yellow",
-        "notes": "Customer waiting for vehicle repair."
-    },
-    {
-        "number": "105433",
-        "type": "Work Order",
-        "customer": "Customer B",
-        "technician": "David",
-        "parts_ordered": 3,
-        "parts_received": 0,
-        "status": "Red",
-        "notes": "Nothing received yet."
-    }
-]
-
-
 @main.route("/")
 def dashboard():
+    work_items = WorkItem.query.filter_by(
+        is_archived=False
+    ).order_by(WorkItem.created_at.desc()).all()
 
-    archived_items = session.get("archived_items", [])
-
-    active_work_items = [
-        item for item in work_items
-        if item["number"] not in archived_items
-    ]
-
-    total_items = len(active_work_items)
-
-    green_count = sum(
-        1 for item in active_work_items
-        if item["status"] == "Green"
-    )
-
-    yellow_count = sum(
-        1 for item in active_work_items
-        if item["status"] == "Yellow"
-    )
-
-    red_count = sum(
-        1 for item in active_work_items
-        if item["status"] == "Red"
-    )
+    total_items = len(work_items)
 
     return render_template(
         "dashboard.html",
-        work_items=active_work_items,
-        total_items=total_items,
-        green_count=green_count,
-        yellow_count=yellow_count,
-        red_count=red_count
+        work_items=work_items,
+        total_items=total_items
     )
 
 
-@main.route("/archive/<work_item_number>", methods=["POST"])
-def archive_work_item(work_item_number):
+@main.route("/new-work-item", methods=["GET", "POST"])
+def new_work_item():
+    if request.method == "POST":
+        number = request.form.get("number", "").strip()
+        item_type = request.form.get("type", "").strip()
+        customer = request.form.get("customer", "").strip()
+        technician = request.form.get("technician", "").strip()
+        notes = request.form.get("notes", "").strip()
 
-    archived_items = session.get("archived_items", [])
+        if not number or not item_type or not customer:
+            flash(
+                "Work Item Number, Type, and Customer are required.",
+                "danger"
+            )
+            return redirect(url_for("main.new_work_item"))
 
-    if work_item_number not in archived_items:
-        archived_items.append(work_item_number)
+        work_item = WorkItem(
+            number=number,
+            type=item_type,
+            customer=customer,
+            technician=technician,
+            notes=notes
+        )
 
-    session["archived_items"] = archived_items
+        db.session.add(work_item)
+        db.session.commit()
+
+        flash("Work Item created successfully!", "success")
+
+        return redirect(url_for("main.dashboard"))
+
+    return render_template("new_work_item.html")
+
+
+@main.route("/archive/<int:item_id>", methods=["POST"])
+def archive_work_item(item_id):
+    work_item = db.session.get(WorkItem, item_id)
+
+    if work_item:
+        work_item.is_archived = True
+        db.session.commit()
+        flash("Work Item archived successfully.", "success")
 
     return redirect(url_for("main.dashboard"))

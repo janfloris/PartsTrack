@@ -1,0 +1,92 @@
+
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="container mt-4">
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>New Work Item</h2>
+
+        <a href="{{ url_for('main.dashboard') }}"
+           class="btn btn-secondary">
+            Cancel
+        </a>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-body">
+
+            <form method="POST">
+
+                <div class="mb-3">
+                    <label class="form-label">
+                        Work Item Number *
+                    </label>
+
+                    <input type="text"
+                           name="number"
+                           class="form-control"
+                           required>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">
+                        Type *
+                    </label>
+
+                    <select name="type"
+                            class="form-select"
+                            required>
+                        <option value="">Select Type</option>
+                        <option value="Work Order">Work Order</option>
+                        <option value="Estimate">Estimate</option>
+                        <option value="Invoice">Invoice</option>
+                        <option value="Quote">Quote</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">
+                        Customer *
+                    </label>
+
+                    <input type="text"
+                           name="customer"
+                           class="form-control"
+                           required>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">
+                        Technician
+                    </label>
+
+                    <input type="text"
+                           name="technician"
+                           class="form-control">
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">
+                        Notes
+                    </label>
+
+                    <textarea name="notes"
+                              class="form-control"
+                              rows="4"></textarea>
+                </div>
+
+                <button type="submit"
+                        class="btn btn-primary">
+                    Save Work Item
+                </button>
+
+            </form>
+
+        </div>
+    </div>
+
+</div>
+
+{% endblock %}
