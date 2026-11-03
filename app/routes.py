@@ -28,14 +28,41 @@ def dashboard():
         total_items=total_items
     )
 
+
+
 @main.route("/work-item/<int:item_id>")
 def work_item_details(item_id):
     work_item = db.get_or_404(WorkItem, item_id)
 
+    total_ordered = sum(
+        part.quantity_ordered
+        for order in work_item.parts_orders
+        for part in order.parts
+    )
+
+    total_received = sum(
+        part.quantity_received
+        for order in work_item.parts_orders
+        for part in order.parts
+    )
+
+    if total_ordered == 0 or total_received == 0:
+        status = "Red"
+
+    elif total_received >= total_ordered:
+        status = "Green"
+
+    else:
+        status = "Yellow"
+
     return render_template(
         "work_item_details.html",
-        work_item=work_item
+        work_item=work_item,
+        total_ordered=total_ordered,
+        total_received=total_received,
+        status=status
     )
+
 
 @main.route("/work-item/<int:item_id>/add-order", methods=["POST"])
 def add_parts_order(item_id):
@@ -111,3 +138,101 @@ def archive_work_item(item_id):
         flash("Work Item archived successfully.", "success")
 
     return redirect(url_for("main.dashboard"))
+
+
+@main.route("/parts-order/<int:order_id>/add-part", methods=["POST"])
+def add_part(order_id):
+    parts_order = db.get_or_404(PartsOrder, order_id)
+
+    part_number = request.form.get("part_number", "").strip()
+    description = request.form.get("description", "").strip()
+    notes = request.form.get("notes", "").strip()
+
+    try:
+        quantity_ordered = int(
+            request.form.get("quantity_ordered", "1")
+        )
+        quantity_received = int(
+            request.form.get("quantity_received", "0")
+        )
+    except ValueError:
+        flash("Quantities must be whole numbers.", "danger")
+        return redirect(
+            url_for(
+                "main.work_item_details",
+                item_id=parts_order.work_item_id
+            )
+        )
+
+    if not part_number or not description:
+        flash("Part Number and Description are required.", "danger")
+
+    elif quantity_ordered <= 0:
+        flash("Quantity Ordered must be greater than zero.", "danger")
+
+    elif quantity_received < 0 or quantity_received > quantity_ordered:
+        flash(
+            "Quantity Received must be between zero and Quantity Ordered.",
+            "danger"
+        )
+
+    else:
+        part = PartLine(
+            parts_order_id=parts_order.id,
+            part_number=part_number,
+            description=description,
+            quantity_ordered=quantity_ordered,
+            quantity_received=quantity_received,
+            notes=notes
+        )
+
+        db.session.add(part)
+        db.session.commit()
+
+        flash("Part added successfully!", "success")
+
+    return redirect(
+        url_for(
+            "main.work_item_details",
+            item_id=parts_order.work_item_id
+        )
+    )
+
+@main.route("/part/<int:part_id>/update-received", methods=["POST"])
+def update_received(part_id):
+    part = db.get_or_404(PartLine, part_id)
+
+    try:
+        quantity_received = int(
+            request.form.get("quantity_received", "0")
+        )
+    except ValueError:
+        flash("Received quantity must be a whole number.", "danger")
+        return redirect(
+            url_for(
+                "main.work_item_details",
+                item_id=part.parts_order.work_item_id
+            )
+        )
+
+    if quantity_received < 0:
+        flash("Received quantity cannot be negative.", "danger")
+
+    elif quantity_received > part.quantity_ordered:
+        flash(
+            "Received quantity cannot exceed the quantity ordered.",
+            "danger"
+        )
+
+    else:
+        part.quantity_received = quantity_received
+        db.session.commit()
+
+        flash("Received quantity updated successfully!", "success")
+
+    return redirect(
+        url_for(
+            "main.work_item_details",
+            item_id=part.parts_order.work_item_id
+        )
+    )

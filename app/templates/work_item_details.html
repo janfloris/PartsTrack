@@ -62,6 +62,74 @@
 
     </div>
 
+    <div class="card shadow-sm mb-4">
+
+        <div class="card-body">
+
+            <div class="row align-items-center">
+
+                <div class="col-md-4">
+                    <h5 class="mb-1">Parts Receiving Status</h5>
+                    <p class="text-muted mb-0">
+                        {{ total_received }} of {{ total_ordered }} units received
+                    </p>
+                </div>
+
+                <div class="col-md-4">
+
+                    {% if status == "Green" %}
+                        <span class="badge bg-success fs-5">
+                            Green - All Parts Received
+                        </span>
+
+                    {% elif status == "Yellow" %}
+                        <span class="badge bg-warning text-dark fs-5">
+                            Yellow - Partially Received
+                        </span>
+
+                    {% else %}
+                        <span class="badge bg-danger fs-5">
+                            Red - Nothing Received
+                        </span>
+                    {% endif %}
+
+                </div>
+
+                <div class="col-md-4">
+
+                    {% if total_ordered > 0 %}
+                        <div class="progress" style="height: 20px;">
+
+                            <div class="progress-bar
+                                {% if status == 'Green' %}
+                                    bg-success
+                                {% elif status == 'Yellow' %}
+                                    bg-warning
+                                {% else %}
+                                    bg-danger
+                                {% endif %}"
+                                role="progressbar"
+                                style="width: {{ (total_received / total_ordered * 100)|round|int }}%;">
+
+                                {{ (total_received / total_ordered * 100)|round|int }}%
+
+                            </div>
+
+                        </div>
+                    {% else %}
+                        <span class="text-muted">
+                            No parts ordered yet
+                        </span>
+                    {% endif %}
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
     <div class="card shadow-sm">
 
         <div class="card-header">
@@ -149,10 +217,152 @@
                 {% if order.notes %}
                     <p>{{ order.notes }}</p>
                 {% endif %}
+            
 
-                <p class="text-muted mb-0">
-                    Parts will be added to this order next.
-                </p>
+                <form method="POST"
+                    action="{{ url_for('main.add_part', order_id=order.id) }}"
+                    class="mb-4">
+
+                    <div class="row align-items-end">
+
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Part Number *</label>
+
+                            <input type="text"
+                                name="part_number"
+                                class="form-control"
+                                required>
+                        </div>
+
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Part Description *</label>
+
+                            <input type="text"
+                                name="description"
+                                class="form-control"
+                                required>
+                        </div>
+
+                        <div class="col-md-2 mb-3">
+                            <label class="form-label">Qty Ordered *</label>
+
+                            <input type="number"
+                                name="quantity_ordered"
+                                class="form-control"
+                                min="1"
+                                value="1"
+                                required>
+                        </div>
+
+                        <div class="col-md-2 mb-3">
+                            <label class="form-label">Qty Received</label>
+
+                            <input type="number"
+                                name="quantity_received"
+                                class="form-control"
+                                min="0"
+                                value="0"
+                                required>
+                        </div>
+
+                        <div class="col-md-1 mb-3">
+                            <button type="submit"
+                                    class="btn btn-primary"
+                                    title="Add Part">
+                                <i class="bi bi-plus-lg"></i>
+                            </button>
+                        </div>
+
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Part Notes</label>
+
+                        <input type="text"
+                            name="notes"
+                            class="form-control"
+                            placeholder="Optional notes">
+                    </div>
+
+                </form>
+
+                <hr>
+
+                <h6 class="mb-3">Parts on This Order</h6>
+
+                <div class="table-responsive">
+
+                    <table class="table table-sm table-hover align-middle">
+
+                        <thead class="table-light">
+                            <tr>
+                                <th>Part Number</th>
+                                <th>Description</th>
+                                <th>Qty Ordered</th>
+                                <th>Qty Received</th>
+                                <th>Notes</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+
+                            {% for part in order.parts %}
+
+                            <tr>
+                                <td>
+                                    <strong>{{ part.part_number }}</strong>
+                                </td>
+
+                                <td>{{ part.description }}</td>
+
+                                <td>{{ part.quantity_ordered }}</td>
+
+                                <td style="min-width: 190px;">
+
+                                    <form method="POST"
+                                        action="{{ url_for('main.update_received', part_id=part.id) }}"
+                                        class="d-flex align-items-center gap-2">
+
+                                        <input type="number"
+                                            name="quantity_received"
+                                            class="form-control form-control-sm"
+                                            min="0"
+                                            max="{{ part.quantity_ordered }}"
+                                            value="{{ part.quantity_received }}"
+                                            required>
+
+                                        <button type="submit"
+                                                class="btn btn-sm btn-outline-primary"
+                                                title="Update received quantity">
+
+                                            <i class="bi bi-check-lg"></i>
+
+                                        </button>
+
+                                    </form>
+
+                                </td>
+
+                                <td>{{ part.notes or "-" }}</td>
+                            </tr>
+
+
+                            {% else %}
+
+                            <tr>
+                                <td colspan="5"
+                                    class="text-muted text-center">
+                                    No parts added to this supplier order yet.
+                                </td>
+                            </tr>
+
+                            {% endfor %}
+
+                        </tbody>
+
+                    </table>
+
+                </div>
 
             </div>
 
