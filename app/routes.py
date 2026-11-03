@@ -178,6 +178,31 @@ def archive_work_item(item_id):
 
     return redirect(url_for("main.dashboard"))
 
+@main.route("/archive")
+def archived_work_items():
+    work_items = (
+        WorkItem.query
+        .filter_by(is_archived=True)
+        .order_by(WorkItem.created_at.desc())
+        .all()
+    )
+
+    return render_template(
+        "archive.html",
+        work_items=work_items
+    )
+
+@main.route("/restore/<int:item_id>", methods=["POST"])
+def restore_work_item(item_id):
+    work_item = db.session.get(WorkItem, item_id)
+
+    if work_item:
+        work_item.is_archived = False
+        db.session.commit()
+
+        flash("Work Item restored successfully.", "success")
+
+    return redirect(url_for("main.archived_work_items"))
 
 @main.route("/parts-order/<int:order_id>/add-part", methods=["POST"])
 def add_part(order_id):
