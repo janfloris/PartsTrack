@@ -10,6 +10,7 @@ from flask import (
 
 from app import db
 from app.models import WorkItem, PartsOrder, PartLine
+from datetime import date
 
 main = Blueprint("main", __name__)
 
@@ -225,6 +226,50 @@ def restore_work_item(item_id):
         db.session.commit()
 
         flash("Work Item restored successfully.", "success")
+
+    return redirect(url_for("main.archived_work_items"))
+
+@main.route("/archive/delete-old", methods=["POST"])
+def delete_old_archived_items():
+    cutoff_text = request.form.get("cutoff_date", "").strip()
+
+    try:
+        cutoff_date = date.fromisoformat(cutoff_text)
+    except ValueError:
+        flash("Please select a valid date.", "danger")
+        return redirect(url_for("main.archived_work_items"))
+
+    if request.form.get("confirm_delete") != "yes":
+        flash("Deletion was not confirmed.", "warning")
+        return redirect(url_for("main.archived_work_items"))
+
+    archived_items = WorkItem.query.filter_by(
+        is_archived=True
+    ).all()
+
+    items_to_delete = [
+        item for item in archived_items
+        if item.created_at.date() < cutoff_date
+    ]
+
+    if not items_to_delete:
+        flash(
+            "No archived Work Items were found before the selected date.",
+            "info"
+        )
+        return redirect(url_for("main.archived_work_items"))
+
+    deleted_count = len(items_to_delete)
+
+    for item in items_to_delete:
+        db.session.delete(item)
+
+    db.session.commit()
+
+    flash(
+        f"{deleted_count} archived Work Item(s) permanently deleted.",
+        "success"
+    )
 
     return redirect(url_for("main.archived_work_items"))
 
