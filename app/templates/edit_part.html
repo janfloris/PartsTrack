@@ -1,0 +1,124 @@
+
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="container mt-4">
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+
+        <div>
+            <h2>Edit Part</h2>
+            <p class="text-muted mb-0">
+                {{ part.parts_order.supplier }}
+                {% if part.parts_order.order_number %}
+                    - Order #{{ part.parts_order.order_number }}
+                {% endif %}
+            </p>
+        </div>
+
+        <a href="{{ url_for(
+            'main.work_item_details',
+            item_id=part.parts_order.work_item_id
+        ) }}"
+           class="btn btn-secondary">
+            Cancel
+        </a>
+
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <div class="card shadow-sm">
+
+        <div class="card-body">
+
+            <form method="POST">
+
+                <div class="row">
+
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">
+                            Part Number *
+                        </label>
+
+                        <input type="text"
+                               name="part_number"
+                               class="form-control"
+                               value="{{ part.part_number }}"
+                               required>
+                    </div>
+
+                    <div class="col-md-8 mb-3">
+                        <label class="form-label">
+                            Part Description *
+                        </label>
+
+                        <input type="text"
+                               name="description"
+                               class="form-control"
+                               value="{{ part.description }}"
+                               required>
+                    </div>
+
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">
+                            Quantity Ordered *
+                        </label>
+
+                        <input type="number"
+                               name="quantity_ordered"
+                               class="form-control"
+                               min="1"
+                               value="{{ part.quantity_ordered }}"
+                               required>
+                    </div>
+
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">
+                            Quantity Received *
+                        </label>
+
+                        <input type="number"
+                               name="quantity_received"
+                               class="form-control"
+                               min="0"
+                               max="{{ part.quantity_ordered }}"
+                               value="{{ part.quantity_received }}"
+                               required>
+                    </div>
+
+                    <div class="col-12 mb-3">
+                        <label class="form-label">
+                            Part Notes
+                        </label>
+
+                        <textarea name="notes"
+                                  class="form-control"
+                                  rows="3">{{ part.notes or "" }}</textarea>
+                    </div>
+
+                </div>
+
+                <button type="submit"
+                        class="btn btn-primary">
+                    Save Changes
+                </button>
+
+            </form>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}

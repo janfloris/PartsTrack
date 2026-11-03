@@ -47,6 +47,33 @@
             </div>
         </div>
 
+        <div class="col-md-3">
+            <div class="card shadow-sm border-success">
+                <div class="card-body">
+                    <h6 class="text-muted">All Parts Received</h6>
+                    <h3 class="text-success">{{ green_count }}</h3>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card shadow-sm border-warning">
+                <div class="card-body">
+                    <h6 class="text-muted">Partially Received</h6>
+                    <h3 class="text-warning">{{ yellow_count }}</h3>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card shadow-sm border-danger">
+                <div class="card-body">
+                    <h6 class="text-muted">Nothing Received</h6>
+                    <h3 class="text-danger">{{ red_count }}</h3>
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <div class="card shadow-sm">
@@ -64,6 +91,7 @@
                             <th>Technician</th>
                             <th>Notes</th>
                             <th>Created</th>
+                            <th>Receiving Status</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -97,6 +125,30 @@
                             </td>
 
                             <td>
+
+                                {% if item.receiving_status == "Green" %}
+
+                                    <span class="badge bg-success">
+                                        Green
+                                    </span>
+
+                                {% elif item.receiving_status == "Yellow" %}
+
+                                    <span class="badge bg-warning text-dark">
+                                        Yellow
+                                    </span>
+
+                                {% else %}
+
+                                    <span class="badge bg-danger">
+                                        Red
+                                    </span>
+
+                                {% endif %}
+
+                            </td>
+
+                            <td>
                                 <form method="POST"
                                       action="{{ url_for('main.archive_work_item', item_id=item.id) }}"
                                       onsubmit="return confirm('Archive this Work Item?');">
@@ -114,7 +166,7 @@
                         {% else %}
 
                         <tr>
-                            <td colspan="7"
+                            <td colspan="8"
                                 class="text-center text-muted py-4">
                                 No active Work Items found.
                                 Click New Work Item to get started.

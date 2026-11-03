@@ -14,6 +14,7 @@ from app.models import WorkItem, PartsOrder, PartLine
 main = Blueprint("main", __name__)
 
 
+
 @main.route("/")
 def dashboard():
     work_items = WorkItem.query.filter_by(
@@ -22,12 +23,50 @@ def dashboard():
 
     total_items = len(work_items)
 
+    green_count = 0
+    yellow_count = 0
+    red_count = 0
+
+    for item in work_items:
+
+        total_ordered = sum(
+            part.quantity_ordered
+            for order in item.parts_orders
+            for part in order.parts
+        )
+
+        total_received = sum(
+            part.quantity_received
+            for order in item.parts_orders
+            for part in order.parts
+        )
+
+        if total_ordered == 0 or total_received == 0:
+            item.receiving_status = "Red"
+
+        elif total_received >= total_ordered:
+            item.receiving_status = "Green"
+
+        else:
+            item.receiving_status = "Yellow"
+
+        if item.receiving_status == "Green":
+            green_count += 1
+
+        elif item.receiving_status == "Yellow":
+            yellow_count += 1
+
+        else:
+            red_count += 1
+
     return render_template(
         "dashboard.html",
         work_items=work_items,
-        total_items=total_items
+        total_items=total_items,
+        green_count=green_count,
+        yellow_count=yellow_count,
+        red_count=red_count
     )
-
 
 
 @main.route("/work-item/<int:item_id>")
@@ -235,4 +274,91 @@ def update_received(part_id):
             "main.work_item_details",
             item_id=part.parts_order.work_item_id
         )
+    )
+
+@main.route("/part/<int:part_id>/edit", methods=["GET", "POST"])
+def edit_part(part_id):
+    part = db.get_or_404(PartLine, part_id)
+
+    if request.method == "POST":
+        part_number = request.form.get("part_number", "").strip()
+        description = request.form.get("description", "").strip()
+        notes = request.form.get("notes", "").strip()
+
+        try:
+            quantity_ordered = int(
+                request.form.get("quantity_ordered", "1")
+            )
+            quantity_received = int(
+                request.form.get("quantity_received", "0")
+            )
+        except ValueError:
+            flash("Quantities must be whole numbers.", "danger")
+            return redirect(
+                url_for("main.edit_part", part_id=part.id)
+            )
+
+        if not part_number or not description:
+            flash("Part Number and Description are required.", "danger")
+
+        elif quantity_ordered <= 0:
+            flash("Quantity Ordered must be greater than zero.", "danger")
+
+        elif quantity_received < 0 or quantity_received > quantity_ordered:
+            flash(
+                "Quantity Received must be between zero and Quantity Ordered.",
+                "danger"
+            )
+
+        else:
+            part.part_number = part_number
+            part.description = description
+            part.quantity_ordered = quantity_ordered
+            part.quantity_received = quantity_received
+            part.notes = notes
+
+            db.session.commit()
+
+            flash("Part updated successfully!", "success")
+
+            return redirect(
+                url_for(
+                    "main.work_item_details",
+                    item_id=part.parts_order.work_item_id
+                )
+            )
+
+    return render_template("edit_part.html", part=part)
+
+@main.route("/parts-order/<int:order_id>/edit", methods=["GET", "POST"])
+def edit_parts_order(order_id):
+    parts_order = db.get_or_404(PartsOrder, order_id)
+
+    if request.method == "POST":
+        supplier = request.form.get("supplier", "").strip()
+        order_number = request.form.get("order_number", "").strip()
+        notes = request.form.get("notes", "").strip()
+
+        if not supplier:
+            flash("Supplier is required.", "danger")
+
+        else:
+            parts_order.supplier = supplier
+            parts_order.order_number = order_number
+            parts_order.notes = notes
+
+            db.session.commit()
+
+            flash("Supplier order updated successfully!", "success")
+
+            return redirect(
+                url_for(
+                    "main.work_item_details",
+                    item_id=parts_order.work_item_id
+                )
+            )
+
+    return render_template(
+        "edit_parts_order.html",
+        parts_order=parts_order
     )
