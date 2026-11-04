@@ -23,6 +23,77 @@
         </a>
     </div>
 
+    <!-- Permanently Delete Old Archived Work Items -->
+    <div class="card shadow-sm border-danger mb-4">
+
+        <div class="card-header bg-danger text-white">
+            <i class="bi bi-trash"></i>
+            Permanently Delete Old Archived Work Items
+        </div>
+
+        <div class="card-body">
+
+            <p>
+                Select a date to permanently delete archived Work Items
+                created <strong>before</strong> that date.
+            </p>
+
+            <div class="alert alert-warning">
+                <i class="bi bi-exclamation-triangle"></i>
+                <strong>Warning:</strong>
+                This action cannot be undone. All associated supplier
+                orders and part lines will also be permanently deleted.
+            </div>
+
+            <form method="POST"
+                  action="{{ url_for('main.delete_old_archived_items') }}"
+                  onsubmit="return confirm('Are you sure you want to permanently delete the selected archived Work Items and all associated supplier orders and parts? This cannot be undone.');">
+
+                <div class="row align-items-end">
+
+                    <div class="col-md-4 mb-3">
+                        <label for="cutoff_date" class="form-label">
+                            Delete archived items created before:
+                        </label>
+
+                        <input type="date"
+                               class="form-control"
+                               id="cutoff_date"
+                               name="cutoff_date"
+                               required>
+                    </div>
+
+                    <div class="col-md-5 mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input"
+                                   type="checkbox"
+                                   id="confirm_delete"
+                                   name="confirm_delete"
+                                   value="yes"
+                                   required>
+
+                            <label class="form-check-label"
+                                   for="confirm_delete">
+                                I understand that this deletion is permanent.
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="col-md-3 mb-3">
+                        <button type="submit"
+                                class="btn btn-danger w-100">
+                            <i class="bi bi-trash"></i>
+                            Delete Old Items
+                        </button>
+                    </div>
+
+                </div>
+
+            </form>
+
+        </div>
+    </div>
+
     {% if work_items %}
 
     <div class="card shadow-sm">
