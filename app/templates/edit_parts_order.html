@@ -1,4 +1,3 @@
-
 {% extends "base.html" %}
 
 {% block content %}
@@ -36,11 +35,39 @@
                         Supplier *
                     </label>
 
-                    <input type="text"
-                           name="supplier"
-                           class="form-control"
-                           value="{{ parts_order.supplier }}"
-                           required>
+                    {% set supplier_found = namespace(value=false) %}
+
+                    <select name="supplier"
+                            class="form-select"
+                            required>
+
+                        <option value="">
+                            Select Supplier
+                        </option>
+
+                        {% for supplier in suppliers %}
+
+                            {% if supplier.name == parts_order.supplier %}
+                                {% set supplier_found.value = true %}
+                            {% endif %}
+
+                            <option value="{{ supplier.name }}"
+                                    {% if supplier.name == parts_order.supplier %}
+                                        selected
+                                    {% endif %}>
+                                {{ supplier.name }}
+                            </option>
+
+                        {% endfor %}
+
+                        {% if not supplier_found.value %}
+                            <option value="{{ parts_order.supplier }}"
+                                    selected>
+                                {{ parts_order.supplier }}
+                            </option>
+                        {% endif %}
+
+                    </select>
                 </div>
 
                 <div class="mb-3">

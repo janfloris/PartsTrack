@@ -9,7 +9,7 @@ from flask import (
 )
 
 from app import db
-from app.models import WorkItem, PartsOrder, PartLine
+from app.models import WorkItem, PartsOrder, PartLine, Technician, Supplier
 from datetime import date
 
 main = Blueprint("main", __name__)
@@ -82,6 +82,10 @@ def dashboard():
             if item.receiving_status == status_filter
         ]
 
+    technicians = Technician.query.order_by(
+        Technician.name.asc()
+    ).all()
+
     return render_template(
         "dashboard.html",
         work_items=filtered_items,
@@ -90,13 +94,16 @@ def dashboard():
         yellow_count=yellow_count,
         red_count=red_count,
         search_query=search_query,
-        status_filter=status_filter
+        status_filter=status_filter,
+        technicians=technicians
     )
 
 
 @main.route("/work-item/<int:item_id>")
 def work_item_details(item_id):
     work_item = db.get_or_404(WorkItem, item_id)
+
+    suppliers = Supplier.query.order_by(Supplier.name.asc()).all()
 
     total_ordered = sum(
         part.quantity_ordered
@@ -124,7 +131,8 @@ def work_item_details(item_id):
         work_item=work_item,
         total_ordered=total_ordered,
         total_received=total_received,
-        status=status
+        status=status,
+        suppliers=suppliers
     )
 
 
@@ -428,6 +436,8 @@ def edit_part(part_id):
 def edit_parts_order(order_id):
     parts_order = db.get_or_404(PartsOrder, order_id)
 
+    suppliers = Supplier.query.order_by(Supplier.name.asc()).all()
+
     if request.method == "POST":
         supplier = request.form.get("supplier", "").strip()
         order_number = request.form.get("order_number", "").strip()
@@ -454,5 +464,123 @@ def edit_parts_order(order_id):
 
     return render_template(
         "edit_parts_order.html",
-        parts_order=parts_order
+        parts_order=parts_order,
+        suppliers=suppliers
     )
+
+
+@main.route("/work-item/<int:item_id>/update-dashboard", methods=["POST"])
+def update_work_item_dashboard(item_id):
+    item = WorkItem.query.get_or_404(item_id)
+
+    item.technician = request.form.get("technician", "").strip()
+    item.notes = request.form.get("notes", "").strip()
+
+    db.session.commit()
+
+    flash(
+        f"Work Item {item.number} updated successfully.",
+        "success"
+    )
+
+    return redirect(url_for("main.dashboard"))
+
+
+
+@main.route("/settings/technicians")
+def technician_settings():
+    technicians = Technician.query.order_by(
+        Technician.name.asc()
+    ).all()
+
+    suppliers = Supplier.query.order_by(
+        Supplier.name.asc()
+    ).all()
+
+    return render_template(
+        "technician_settings.html",
+        technicians=technicians,
+        suppliers=suppliers
+    )
+
+
+
+@main.route("/settings/technicians/add", methods=["POST"])
+def add_technician():
+    name = request.form.get("name", "").strip()
+
+    if not name:
+        flash("Please enter a technician name.", "warning")
+        return redirect(url_for("main.technician_settings"))
+
+    existing_technician = Technician.query.filter_by(name=name).first()
+
+    if existing_technician:
+        flash("This technician already exists.", "warning")
+        return redirect(url_for("main.technician_settings"))
+
+    technician = Technician(name=name)
+
+    db.session.add(technician)
+    db.session.commit()
+
+    flash(f"Technician '{name}' added successfully.", "success")
+
+    return redirect(url_for("main.technician_settings"))
+
+
+@main.route("/settings/technicians/delete/<int:technician_id>", methods=["POST"])
+def delete_technician(technician_id):
+    technician = Technician.query.get_or_404(technician_id)
+
+    name = technician.name
+
+    db.session.delete(technician)
+    db.session.commit()
+
+    flash(f"Technician '{name}' removed from the list.", "success")
+
+    return redirect(url_for("main.technician_settings"))
+
+
+@main.route("/settings/suppliers")
+def supplier_settings():
+    return redirect(url_for("main.technician_settings"))
+
+
+@main.route("/settings/suppliers/add", methods=["POST"])
+def add_supplier():
+    name = request.form.get("name", "").strip()
+
+    if not name:
+        flash("Please enter a supplier name.", "warning")
+        return redirect(url_for("main.supplier_settings"))
+
+    existing_supplier = Supplier.query.filter_by(name=name).first()
+
+    if existing_supplier:
+        flash("This supplier already exists.", "warning")
+        return redirect(url_for("main.supplier_settings"))
+
+    supplier = Supplier(name=name)
+
+    db.session.add(supplier)
+    db.session.commit()
+
+    flash(f"Supplier '{name}' added successfully.", "success")
+
+    return redirect(url_for("main.supplier_settings"))
+
+
+@main.route("/settings/suppliers/delete/<int:supplier_id>", methods=["POST"])
+def delete_supplier(supplier_id):
+    supplier = Supplier.query.get_or_404(supplier_id)
+
+    name = supplier.name
+
+    db.session.delete(supplier)
+    db.session.commit()
+
+    flash(f"Supplier '{name}' removed from the list.", "success")
+
+    return redirect(url_for("main.supplier_settings"))
