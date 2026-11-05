@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from app import db
 
 
+
 class WorkItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
 
@@ -12,6 +13,11 @@ class WorkItem(db.Model):
     customer = db.Column(db.String(150), nullable=False)
     technician = db.Column(db.String(100), nullable=True)
     notes = db.Column(db.Text, nullable=True)
+
+    appointment_date = db.Column(
+        db.Date,
+        nullable=True
+    )
 
     is_archived = db.Column(
         db.Boolean,
@@ -33,6 +39,7 @@ class WorkItem(db.Model):
 
     def __repr__(self):
         return f"<WorkItem {self.number}>"
+
 
 
 class PartsOrder(db.Model):

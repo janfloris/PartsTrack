@@ -5,6 +5,7 @@
 
 <div class="container-fluid mt-4">
 
+    <!-- Page Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h2>PartsTrack Dashboard</h2>
@@ -14,31 +15,34 @@
         </div>
 
         <div class="d-flex gap-2">
+
             <a href="{{ url_for('main.technician_settings') }}"
-            class="btn btn-outline-secondary">
+               class="btn btn-outline-secondary">
                 <i class="bi bi-gear"></i>
                 Settings
             </a>
 
             <a href="{{ url_for('main.archived_work_items') }}"
-            class="btn btn-outline-secondary">
+               class="btn btn-outline-secondary">
                 <i class="bi bi-archive"></i>
                 Archive
             </a>
 
             <a href="{{ url_for('main.new_work_item') }}"
-            class="btn btn-primary">
+               class="btn btn-primary">
                 <i class="bi bi-plus-circle"></i>
                 New Work Item
             </a>
-        </div>
 
+        </div>
     </div>
 
     <!-- Search and Filters -->
     <div class="card shadow-sm mb-4">
         <div class="card-body">
+
             <form method="GET" action="{{ url_for('main.dashboard') }}">
+
                 <div class="row g-3 align-items-end">
 
                     <div class="col-md-6">
@@ -84,6 +88,7 @@
                     </div>
 
                     <div class="col-md-2">
+
                         <button type="submit"
                                 class="btn btn-primary w-100 mb-2">
                             <i class="bi bi-search"></i>
@@ -94,10 +99,13 @@
                            class="btn btn-outline-secondary w-100">
                             Clear
                         </a>
+
                     </div>
 
                 </div>
+
             </form>
+
         </div>
     </div>
 
@@ -105,6 +113,7 @@
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
             {% for category, message in messages %}
+
                 <div class="alert alert-{{ category }} alert-dismissible fade show"
                      role="alert">
 
@@ -116,6 +125,7 @@
                     </button>
 
                 </div>
+
             {% endfor %}
         {% endif %}
     {% endwith %}
@@ -172,12 +182,13 @@
                     <thead class="table-light">
                         <tr>
                             <th>Work Item #</th>
+                            <th>Created</th>                            
                             <th>Type</th>
                             <th>Customer</th>
                             <th>Technician</th>
                             <th>Notes</th>
-                            <th>Created</th>
-                            <th>Receiving Status</th>
+                            <th>Appointment Date</th>
+                            <th>Receiving Status</th>                            
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -190,6 +201,7 @@
 
                         <tr>
 
+                            <!-- Work Item Number -->
                             <td>
                                 <strong>
                                     <a href="{{ url_for('main.work_item_details', item_id=item.id) }}"
@@ -199,8 +211,15 @@
                                 </strong>
                             </td>
 
+                            <!-- Created Date -->
+                            <td>
+                                {{ item.created_at.strftime("%Y-%m-%d") }}
+                            </td>
+
+                            <!-- Type -->
                             <td>{{ item.type }}</td>
 
+                            <!-- Customer -->
                             <td>{{ item.customer }}</td>
 
                             <!-- Editable Technician -->
@@ -234,9 +253,15 @@
                                           style="min-width: 200px;">{{ item.notes or '' }}</textarea>
                             </td>
 
+                            <!-- Editable Appointment Date -->
                             <td>
-                                {{ item.created_at.strftime("%Y-%m-%d") }}
-                            </td>
+                                <input type="date"
+                                       class="form-control form-control-sm"
+                                       name="appointment_date"
+                                       form="{{ form_id }}"
+                                       value="{{ item.appointment_date.strftime('%Y-%m-%d') if item.appointment_date else '' }}"
+                                       style="min-width: 150px;">
+                            </td>                            
 
                             <!-- Receiving Status -->
                             <td>
@@ -300,7 +325,7 @@
                         {% else %}
 
                         <tr>
-                            <td colspan="8"
+                            <td colspan="9"
                                 class="text-center text-muted py-4">
 
                                 No active Work Items found.

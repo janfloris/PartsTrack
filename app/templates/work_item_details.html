@@ -51,10 +51,15 @@
                     <div>{{ work_item.technician or "-" }}</div>
                 </div>
 
-                <div class="col-md-8 mb-3">
+                <div class="col-md-4 mb-3">
                     <strong>Notes</strong>
                     <div>{{ work_item.notes or "-" }}</div>
                 </div>
+
+                <div class="col-md-4 mb-3">
+                    <strong>Booked Date</strong>
+                    <div>{{ work_item.booked_date.strftime("%Y-%m-%d") if work_item.booked_date else "-" }}</div>
+                </div>                
 
             </div>
 

@@ -10,7 +10,7 @@ from flask import (
 
 from app import db
 from app.models import WorkItem, PartsOrder, PartLine, Technician, Supplier
-from datetime import date
+from datetime import date, datetime
 
 main = Blueprint("main", __name__)
 
@@ -469,12 +469,23 @@ def edit_parts_order(order_id):
     )
 
 
+
 @main.route("/work-item/<int:item_id>/update-dashboard", methods=["POST"])
 def update_work_item_dashboard(item_id):
     item = WorkItem.query.get_or_404(item_id)
 
     item.technician = request.form.get("technician", "").strip()
     item.notes = request.form.get("notes", "").strip()
+
+    appointment_date = request.form.get("appointment_date", "").strip()
+
+    if appointment_date:
+        item.appointment_date = datetime.strptime(
+            appointment_date,
+            "%Y-%m-%d"
+        ).date()
+    else:
+        item.appointment_date = None
 
     db.session.commit()
 
@@ -484,6 +495,7 @@ def update_work_item_dashboard(item_id):
     )
 
     return redirect(url_for("main.dashboard"))
+
 
 
 
