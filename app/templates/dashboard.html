@@ -355,6 +355,9 @@
         // Find the Appointment Date field for this Work Item
         const appointmentDateField = document.querySelector(
             'input[name="appointment_date"][form="' + form.id + '"]'
+        )
+        const technicianField = document.querySelector(
+            'select[name="technician"][form="' + form.id + '"]'
         );
 
         // No Appointment Date selected - save normally
@@ -370,6 +373,21 @@
 
             const confirmed = confirm(
                 "WARNING: All of the parts have not been received yet.\n\n" +
+                "Are you sure you want to save this Appointment Date?"
+            );
+
+            // If the user clicks Cancel, clear the date picker
+            if (!confirmed) {
+                appointmentDateField.value = "";
+                return false;
+            }
+        }
+
+        // Warn if no technician is assigned
+        if (!technicianField || !technicianField.value) {
+
+            const confirmed = confirm(
+                "WARNING: No technician is assigned to this Work Item.\n\n" +
                 "Are you sure you want to save this Appointment Date?"
             );
 

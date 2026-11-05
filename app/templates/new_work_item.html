@@ -3,7 +3,7 @@
 
 {% block content %}
 
-<div class="container mt-4">
+<div class="container-fluid mt-4">
 
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>New Work Item</h2>
@@ -14,15 +14,34 @@
         </a>
     </div>
 
-    <div class="card shadow-sm">
-        <div class="card-body">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show">
+                    {{ message }}
 
-            <form method="POST">
+                    <button type="button"
+                            class="btn-close"
+                            data-bs-dismiss="alert">
+                    </button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <form method="POST" id="newWorkItemForm">
+
+        <!-- Work Item Details -->
+        <div class="card shadow-sm mb-4">
+
+            <div class="card-header">
+                <h5 class="mb-0">Work Item Details</h5>
+            </div>
+
+            <div class="card-body">
 
                 <div class="mb-3">
-                    <label class="form-label">
-                        Work Item Number *
-                    </label>
+                    <label class="form-label">Work Item Number *</label>
 
                     <input type="text"
                            name="number"
@@ -31,9 +50,7 @@
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label">
-                        Type *
-                    </label>
+                    <label class="form-label">Type *</label>
 
                     <select name="type"
                             class="form-select"
@@ -47,9 +64,7 @@
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label">
-                        Customer *
-                    </label>
+                    <label class="form-label">Customer *</label>
 
                     <input type="text"
                            name="customer"
@@ -58,9 +73,7 @@
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label">
-                        Technician
-                    </label>
+                    <label class="form-label">Technician</label>
 
                     <input type="text"
                            name="technician"
@@ -68,25 +81,422 @@
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label">
-                        Notes
-                    </label>
+                    <label class="form-label">Notes</label>
 
                     <textarea name="notes"
                               class="form-control"
                               rows="4"></textarea>
                 </div>
 
-                <button type="submit"
-                        class="btn btn-primary">
-                    Save Work Item
+            </div>
+        </div>
+
+        <!-- Supplier Orders -->
+        <div class="card shadow-sm mb-4">
+
+            <div class="card-header d-flex justify-content-between align-items-center">
+
+                <h5 class="mb-0">Supplier Orders & Parts</h5>
+
+                <button type="button"
+                        class="btn btn-primary btn-sm"
+                        id="addOrderButton">
+                    <i class="bi bi-plus-circle"></i>
+                    Add Supplier Order
                 </button>
 
-            </form>
+            </div>
+
+            <div class="card-body">
+
+                <p class="text-muted">
+                    Add Supplier Orders and their Parts before saving
+                    the Work Item.
+                </p>
+
+                <input type="hidden"
+                       name="order_count"
+                       id="orderCount"
+                       value="0">
+
+                <div id="ordersContainer"></div>
+
+                <div id="noOrdersMessage"
+                     class="text-muted text-center py-3">
+                    No Supplier Orders added yet.
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Save -->
+        <div class="mb-4">
+
+            <button type="submit"
+                    class="btn btn-success btn-lg">
+                <i class="bi bi-save"></i>
+                Save Work Item
+            </button>
+
+            <a href="{{ url_for('main.dashboard') }}"
+               class="btn btn-secondary btn-lg">
+                Cancel
+            </a>
 
         </div>
-    </div>
+
+    </form>
 
 </div>
+
+<!-- Supplier Order Template -->
+<template id="orderTemplate">
+
+    <div class="card border-primary mb-4 order-card">
+
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+
+            <h6 class="mb-0 order-title">
+                Supplier Order
+            </h6>
+
+            <button type="button"
+                    class="btn btn-sm btn-light remove-order-button">
+                <i class="bi bi-trash"></i>
+                Remove Order
+            </button>
+
+        </div>
+
+        <div class="card-body">
+
+            <div class="row">
+
+                <div class="col-md-4 mb-3">
+
+                    <label class="form-label">
+                        Supplier *
+                    </label>
+
+                    <select class="form-select"
+                            data-field="supplier"
+                            required>
+
+                        <option value="">
+                            Select Supplier
+                        </option>
+
+                        {% for supplier in suppliers %}
+                            <option value="{{ supplier.name }}">
+                                {{ supplier.name }}
+                            </option>
+                        {% endfor %}
+
+                    </select>
+
+                </div>
+
+                <div class="col-md-4 mb-3">
+
+                    <label class="form-label">
+                        Supplier Order Number
+                    </label>
+
+                    <input type="text"
+                           class="form-control"
+                           data-field="order_number"
+                           placeholder="Enter order number">
+
+                </div>
+
+                <div class="col-md-4 mb-3">
+
+                    <label class="form-label">
+                        Order Notes
+                    </label>
+
+                    <input type="text"
+                           class="form-control"
+                           data-field="notes"
+                           placeholder="Optional notes">
+
+                </div>
+
+            </div>
+
+            <hr>
+
+            <div class="d-flex justify-content-between align-items-center mb-3">
+
+                <h6 class="mb-0">
+                    Parts on This Order
+                </h6>
+
+                <button type="button"
+                        class="btn btn-outline-primary btn-sm add-part-button">
+                    <i class="bi bi-plus-lg"></i>
+                    Add Part
+                </button>
+
+            </div>
+
+            <input type="hidden"
+                   class="part-count"
+                   value="0">
+
+            <div class="parts-container"></div>
+
+        </div>
+
+    </div>
+
+</template>
+
+<!-- Part Template -->
+<template id="partTemplate">
+
+    <div class="card bg-light mb-3 part-card">
+
+        <div class="card-body">
+
+            <div class="d-flex justify-content-between align-items-center mb-3">
+
+                <strong class="part-title">
+                    Part
+                </strong>
+
+                <button type="button"
+                        class="btn btn-sm btn-outline-danger remove-part-button">
+                    <i class="bi bi-trash"></i>
+                    Remove Part
+                </button>
+
+            </div>
+
+            <div class="row">
+
+                <div class="col-md-3 mb-3">
+
+                    <label class="form-label">
+                        Part Number *
+                    </label>
+
+                    <input type="text"
+                           class="form-control"
+                           data-field="part_number"
+                           required>
+
+                </div>
+
+                <div class="col-md-4 mb-3">
+
+                    <label class="form-label">
+                        Part Description *
+                    </label>
+
+                    <input type="text"
+                           class="form-control"
+                           data-field="description"
+                           required>
+
+                </div>
+
+                <div class="col-md-2 mb-3">
+
+                    <label class="form-label">
+                        Qty Ordered *
+                    </label>
+
+                    <input type="number"
+                           class="form-control"
+                           data-field="quantity_ordered"
+                           min="1"
+                           value="1"
+                           required>
+
+                </div>
+
+                <div class="col-md-2 mb-3">
+
+                    <label class="form-label">
+                        Qty Received
+                    </label>
+
+                    <input type="number"
+                           class="form-control"
+                           data-field="quantity_received"
+                           min="0"
+                           value="0"
+                           required>
+
+                </div>
+
+            </div>
+
+            <div class="mb-3">
+
+                <label class="form-label">
+                    Part Notes
+                </label>
+
+                <input type="text"
+                       class="form-control"
+                       data-field="notes"
+                       placeholder="Optional notes">
+
+            </div>
+
+        </div>
+
+    </div>
+
+</template>
+
+<script>
+
+    const ordersContainer = document.getElementById("ordersContainer");
+    const orderCountInput = document.getElementById("orderCount");
+    const noOrdersMessage = document.getElementById("noOrdersMessage");
+
+    const orderTemplate = document.getElementById("orderTemplate");
+    const partTemplate = document.getElementById("partTemplate");
+
+    // Update all form field names after adding or removing orders/parts
+    function renumberOrders() {
+
+        const orderCards = ordersContainer.querySelectorAll(".order-card");
+
+        orderCountInput.value = orderCards.length;
+
+        noOrdersMessage.style.display =
+            orderCards.length === 0 ? "block" : "none";
+
+        orderCards.forEach((orderCard, orderIndex) => {
+
+            orderCard.querySelector(".order-title").textContent =
+                "Supplier Order " + (orderIndex + 1);
+
+            // Supplier Order fields
+            orderCard.querySelectorAll("[data-field]").forEach(field => {
+
+                const fieldName = field.dataset.field;
+
+                if (field.closest(".part-card")) {
+                    return;
+                }
+
+                field.name = "order_" + orderIndex + "_" + fieldName;
+
+            });
+
+            // Parts
+            const partCards = orderCard.querySelectorAll(".part-card");
+
+            const partCountInput =
+                orderCard.querySelector(".part-count");
+
+            partCountInput.name =
+                "order_" + orderIndex + "_part_count";
+
+            partCountInput.value = partCards.length;
+
+            partCards.forEach((partCard, partIndex) => {
+
+                partCard.querySelector(".part-title").textContent =
+                    "Part " + (partIndex + 1);
+
+                partCard.querySelectorAll("[data-field]").forEach(field => {
+
+                    const fieldName = field.dataset.field;
+
+                    field.name =
+                        "order_" + orderIndex +
+                        "_part_" + partIndex +
+                        "_" + fieldName;
+
+                });
+
+            });
+
+        });
+
+    }
+
+    // Add a new Supplier Order
+    function addSupplierOrder() {
+
+        const orderCard =
+            orderTemplate.content.cloneNode(true);
+
+        const orderElement =
+            orderCard.querySelector(".order-card");
+
+        ordersContainer.appendChild(orderCard);
+
+        // Add Part button
+        orderElement.querySelector(".add-part-button")
+            .addEventListener("click", function () {
+
+                addPart(orderElement);
+
+            });
+
+        // Remove Supplier Order button
+        orderElement.querySelector(".remove-order-button")
+            .addEventListener("click", function () {
+
+                orderElement.remove();
+
+                renumberOrders();
+
+            });
+
+        // Add one blank Part automatically
+        addPart(orderElement);
+
+        renumberOrders();
+
+    }
+
+    // Add a Part to a Supplier Order
+    function addPart(orderElement) {
+
+        const partsContainer =
+            orderElement.querySelector(".parts-container");
+
+        const partCard =
+            partTemplate.content.cloneNode(true);
+
+        const partElement =
+            partCard.querySelector(".part-card");
+
+        partsContainer.appendChild(partCard);
+
+        // Remove Part button
+        partElement.querySelector(".remove-part-button")
+            .addEventListener("click", function () {
+
+                partElement.remove();
+
+                renumberOrders();
+
+            });
+
+        renumberOrders();
+
+    }
+
+    // Add Supplier Order button
+    document.getElementById("addOrderButton")
+        .addEventListener("click", function () {
+
+            addSupplierOrder();
+
+        });
+
+    // Initial state
+    renumberOrders();
+
+</script>
 
 {% endblock %}

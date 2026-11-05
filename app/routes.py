@@ -98,7 +98,6 @@ def dashboard():
         technicians=technicians
     )
 
-
 @main.route("/work-item/<int:item_id>")
 def work_item_details(item_id):
     work_item = db.get_or_404(WorkItem, item_id)
@@ -136,6 +135,207 @@ def work_item_details(item_id):
     )
 
 
+@main.route("/new-work-item", methods=["GET", "POST"])
+def new_work_item():
+    suppliers = Supplier.query.order_by(Supplier.name.asc()).all()
+
+    if request.method == "POST":
+        number = request.form.get("number", "").strip()
+        item_type = request.form.get("type", "").strip()
+        customer = request.form.get("customer", "").strip()
+        technician = request.form.get("technician", "").strip()
+        notes = request.form.get("notes", "").strip()
+
+        if not number or not item_type or not customer:
+            flash(
+                "Work Item Number, Type, and Customer are required.",
+                "danger"
+            )
+            return redirect(url_for("main.new_work_item"))
+
+        try:
+            order_count = int(request.form.get("order_count", "0"))
+        except ValueError:
+            flash("Invalid Supplier Order count.", "danger")
+            return redirect(url_for("main.new_work_item"))
+
+        if order_count < 0:
+            flash("Supplier Order count cannot be negative.", "danger")
+            return redirect(url_for("main.new_work_item"))
+
+        # Validate all Supplier Orders and Parts before saving
+        orders_data = []
+
+        for order_index in range(order_count):
+            supplier = request.form.get(
+                f"order_{order_index}_supplier", ""
+            ).strip()
+
+            order_number = request.form.get(
+                f"order_{order_index}_order_number", ""
+            ).strip()
+
+            order_notes = request.form.get(
+                f"order_{order_index}_notes", ""
+            ).strip()
+
+            if not supplier:
+                flash(
+                    f"Supplier is required for Supplier Order "
+                    f"{order_index + 1}.",
+                    "danger"
+                )
+                return redirect(url_for("main.new_work_item"))
+
+            try:
+                part_count = int(
+                    request.form.get(
+                        f"order_{order_index}_part_count", "0"
+                    )
+                )
+            except ValueError:
+                flash("Invalid Part count.", "danger")
+                return redirect(url_for("main.new_work_item"))
+
+            if part_count < 0:
+                flash("Part count cannot be negative.", "danger")
+                return redirect(url_for("main.new_work_item"))
+
+            parts_data = []
+
+            for part_index in range(part_count):
+                prefix = (
+                    f"order_{order_index}_part_{part_index}"
+                )
+
+                part_number = request.form.get(
+                    f"{prefix}_part_number", ""
+                ).strip()
+
+                description = request.form.get(
+                    f"{prefix}_description", ""
+                ).strip()
+
+                part_notes = request.form.get(
+                    f"{prefix}_notes", ""
+                ).strip()
+
+                try:
+                    quantity_ordered = int(
+                        request.form.get(
+                            f"{prefix}_quantity_ordered", "1"
+                        )
+                    )
+
+                    quantity_received = int(
+                        request.form.get(
+                            f"{prefix}_quantity_received", "0"
+                        )
+                    )
+                except ValueError:
+                    flash(
+                        "Part quantities must be whole numbers.",
+                        "danger"
+                    )
+                    return redirect(url_for("main.new_work_item"))
+
+                if not part_number or not description:
+                    flash(
+                        "Part Number and Description are required.",
+                        "danger"
+                    )
+                    return redirect(url_for("main.new_work_item"))
+
+                if quantity_ordered <= 0:
+                    flash(
+                        "Quantity Ordered must be greater than zero.",
+                        "danger"
+                    )
+                    return redirect(url_for("main.new_work_item"))
+
+                if (
+                    quantity_received < 0
+                    or quantity_received > quantity_ordered
+                ):
+                    flash(
+                        "Quantity Received must be between zero "
+                        "and Quantity Ordered.",
+                        "danger"
+                    )
+                    return redirect(url_for("main.new_work_item"))
+
+                parts_data.append({
+                    "part_number": part_number,
+                    "description": description,
+                    "quantity_ordered": quantity_ordered,
+                    "quantity_received": quantity_received,
+                    "notes": part_notes
+                })
+
+            orders_data.append({
+                "supplier": supplier,
+                "order_number": order_number,
+                "notes": order_notes,
+                "parts": parts_data
+            })
+
+        # Create the Work Item
+        work_item = WorkItem(
+            number=number,
+            type=item_type,
+            customer=customer,
+            technician=technician,
+            notes=notes
+        )
+
+        db.session.add(work_item)
+
+        # Create Supplier Orders and Parts
+        for order_data in orders_data:
+            parts_order = PartsOrder(
+                work_item=work_item,
+                supplier=order_data["supplier"],
+                order_number=order_data["order_number"],
+                notes=order_data["notes"]
+            )
+
+            db.session.add(parts_order)
+
+            for part_data in order_data["parts"]:
+                part = PartLine(
+                    parts_order=parts_order,
+                    part_number=part_data["part_number"],
+                    description=part_data["description"],
+                    quantity_ordered=part_data["quantity_ordered"],
+                    quantity_received=part_data["quantity_received"],
+                    notes=part_data["notes"]
+                )
+
+                db.session.add(part)
+
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            flash(
+                "An error occurred while saving the Work Item "
+                "and its Supplier Orders.",
+                "danger"
+            )
+            return redirect(url_for("main.new_work_item"))
+
+        flash(
+            "Work Item and Supplier Orders created successfully!",
+            "success"
+        )
+
+        return redirect(url_for("main.dashboard"))
+
+    return render_template(
+        "new_work_item.html",
+        suppliers=suppliers
+    )
+
 @main.route("/work-item/<int:item_id>/add-order", methods=["POST"])
 def add_parts_order(item_id):
     work_item = db.get_or_404(WorkItem, item_id)
@@ -166,8 +366,7 @@ def add_parts_order(item_id):
         url_for("main.work_item_details", item_id=item_id)
     )
 
-@main.route("/new-work-item", methods=["GET", "POST"])
-def new_work_item():
+
     if request.method == "POST":
         number = request.form.get("number", "").strip()
         item_type = request.form.get("type", "").strip()
@@ -198,7 +397,6 @@ def new_work_item():
         return redirect(url_for("main.dashboard"))
 
     return render_template("new_work_item.html")
-
 
 @main.route("/archive/<int:item_id>", methods=["POST"])
 def archive_work_item(item_id):
@@ -468,8 +666,6 @@ def edit_parts_order(order_id):
         suppliers=suppliers
     )
 
-
-
 @main.route("/work-item/<int:item_id>/update-dashboard", methods=["POST"])
 def update_work_item_dashboard(item_id):
     item = WorkItem.query.get_or_404(item_id)
@@ -496,9 +692,6 @@ def update_work_item_dashboard(item_id):
 
     return redirect(url_for("main.dashboard"))
 
-
-
-
 @main.route("/settings/technicians")
 def technician_settings():
     technicians = Technician.query.order_by(
@@ -514,8 +707,6 @@ def technician_settings():
         technicians=technicians,
         suppliers=suppliers
     )
-
-
 
 @main.route("/settings/technicians/add", methods=["POST"])
 def add_technician():
@@ -540,7 +731,6 @@ def add_technician():
 
     return redirect(url_for("main.technician_settings"))
 
-
 @main.route("/settings/technicians/delete/<int:technician_id>", methods=["POST"])
 def delete_technician(technician_id):
     technician = Technician.query.get_or_404(technician_id)
@@ -554,11 +744,9 @@ def delete_technician(technician_id):
 
     return redirect(url_for("main.technician_settings"))
 
-
 @main.route("/settings/suppliers")
 def supplier_settings():
     return redirect(url_for("main.technician_settings"))
-
 
 @main.route("/settings/suppliers/add", methods=["POST"])
 def add_supplier():
@@ -582,7 +770,6 @@ def add_supplier():
     flash(f"Supplier '{name}' added successfully.", "success")
 
     return redirect(url_for("main.supplier_settings"))
-
 
 @main.route("/settings/suppliers/delete/<int:supplier_id>", methods=["POST"])
 def delete_supplier(supplier_id):
