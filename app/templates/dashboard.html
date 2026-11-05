@@ -293,9 +293,11 @@
 
                                 <!-- Save Form -->
                                 <form id="{{ form_id }}"
-                                      method="POST"
-                                      action="{{ url_for('main.update_work_item_dashboard', item_id=item.id) }}"
-                                      class="mb-2">
+                                    method="POST"
+                                    action="{{ url_for('main.update_work_item_dashboard', item_id=item.id) }}"
+                                    class="mb-2"
+                                    data-receiving-status="{{ item.receiving_status }}"
+                                    onsubmit="return confirmAppointmentSave(this);">
 
                                     <button type="submit"
                                             class="btn btn-sm btn-primary w-100">
@@ -346,5 +348,43 @@
     </div>
 
 </div>
+
+<script>
+    function confirmAppointmentSave(form) {
+
+        // Find the Appointment Date field for this Work Item
+        const appointmentDateField = document.querySelector(
+            'input[name="appointment_date"][form="' + form.id + '"]'
+        );
+
+        // No Appointment Date selected - save normally
+        if (!appointmentDateField || !appointmentDateField.value) {
+            return true;
+        }
+
+        // Check the receiving status of this specific Work Item
+        const receivingStatus = form.dataset.receivingStatus;
+
+        // Warn if all parts have not been received
+        if (receivingStatus !== "Green") {
+
+            const confirmed = confirm(
+                "WARNING: All of the parts have not been received yet.\n\n" +
+                "Are you sure you want to save this Appointment Date?"
+            );
+
+            // If the user clicks Cancel, clear the date picker
+            if (!confirmed) {
+                appointmentDateField.value = "";
+                return false;
+            }
+        }
+
+        // Continue with saving
+        return true;
+    }
+</script>
+
+
 
 {% endblock %}
