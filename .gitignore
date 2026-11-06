@@ -2,4 +2,14 @@
 __pycache__/
 *.pyc
 .env
-instance/
+
+# SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Database backups
+*.bak
