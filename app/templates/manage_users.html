@@ -1,0 +1,376 @@
+
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>User Management</h2>
+
+    <a href="{{ url_for('main.dashboard') }}"
+       class="btn btn-secondary">
+        <i class="bi bi-arrow-left"></i>
+        Back to Dashboard
+    </a>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+            <div class="alert alert-{{ category }} alert-dismissible fade show"
+                 role="alert">
+
+                {{ message }}
+
+                <button type="button"
+                        class="btn-close"
+                        data-bs-dismiss="alert"
+                        aria-label="Close">
+                </button>
+
+            </div>
+        {% endfor %}
+    {% endif %}
+{% endwith %}
+
+<div class="card shadow-sm mb-4">
+
+    <div class="card-header bg-dark text-white">
+        <h5 class="mb-0">
+            <i class="bi bi-person-plus"></i>
+            Create New User
+        </h5>
+    </div>
+
+    <div class="card-body">
+
+        <form method="POST"
+              action="{{ url_for('main.create_user') }}">
+
+            <div class="row g-3 align-items-end">
+
+                <div class="col-md-4">
+                    <label for="username" class="form-label">
+                        Username
+                    </label>
+                    <input type="text"
+                           class="form-control"
+                           id="username"
+                           name="username"
+                           maxlength="80"
+                           required>
+                </div>
+
+                <div class="col-md-4">
+                    <label for="password" class="form-label">
+                        Password
+                    </label>
+                    <input type="password"
+                           class="form-control"
+                           id="password"
+                           name="password"
+                           minlength="4"
+                           autocomplete="new-password"
+                           required>
+                </div>
+
+                <div class="col-md-2">
+                    <label for="role" class="form-label">
+                        Role
+                    </label>
+                    <select class="form-select"
+                            id="role"
+                            name="role">
+                        <option value="employee" selected>
+                            Employee
+                        </option>
+                        <option value="admin">
+                            Administrator
+                        </option>
+                    </select>
+                </div>
+
+                <div class="col-md-2">
+                    <button type="submit"
+                            class="btn btn-success w-100">
+                        <i class="bi bi-person-plus"></i>
+                        Create User
+                    </button>
+                </div>
+
+            </div>
+
+        </form>
+
+    </div>
+</div>
+
+<div class="card shadow-sm">
+
+    <div class="card-header bg-dark text-white">
+        <h5 class="mb-0">
+            <i class="bi bi-people"></i>
+            User Accounts
+        </h5>
+    </div>
+
+    <div class="card-body">
+
+        <div class="table-responsive">
+            <table class="table table-striped table-hover align-middle">
+
+                <thead class="table-light">
+                    <tr>
+                        <th>Username</th>
+                        <th>Role</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td>
+                            <i class="bi bi-person-circle"></i>
+                            {{ user.username }}
+                        </td>
+
+                        <td>
+                            {% if user.is_admin %}
+                                <span class="badge bg-primary">
+                                    Administrator
+                                </span>
+                            {% else %}
+                                <span class="badge bg-secondary">
+                                    Employee
+                                </span>
+                            {% endif %}
+                        </td>
+
+                        <td>
+                            {% if user.is_active %}
+                                <span class="badge bg-success">
+                                    Active
+                                </span>
+                            {% else %}
+                                <span class="badge bg-danger">
+                                    Inactive
+                                </span>
+                            {% endif %}
+                        </td>
+
+                        <td>
+                            {{ user.created_at.strftime('%Y-%m-%d') }}
+                        </td>
+
+                        <td>
+                            <button type="button"
+                                    class="btn btn-outline-warning btn-sm"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#resetPasswordModal{{ user.id }}">
+                                <i class="bi bi-key"></i>
+                                Reset Password
+                            </button>
+
+                            {% if user.id != current_user.id %}
+
+                                <button type="button"
+                                        class="btn btn-outline-primary btn-sm"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#changeRoleModal{{ user.id }}">
+                                    <i class="bi bi-person-gear"></i>
+                                    Change Role
+                                </button>
+
+                                <!-- Change Role Modal -->
+                                <div class="modal fade"
+                                    id="changeRoleModal{{ user.id }}"
+                                    tabindex="-1"
+                                    aria-hidden="true">
+
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+
+                                            <div class="modal-header">
+                                                <h5 class="modal-title">
+                                                    Change Role — {{ user.username }}
+                                                </h5>
+
+                                                <button type="button"
+                                                        class="btn-close"
+                                                        data-bs-dismiss="modal"
+                                                        aria-label="Close">
+                                                </button>
+                                            </div>
+
+                                            <form method="POST"
+                                                action="{{ url_for('main.change_user_role', user_id=user.id) }}">
+
+                                                <div class="modal-body">
+
+                                                    <label class="form-label">
+                                                        User Role
+                                                    </label>
+
+                                                    <select name="role"
+                                                            class="form-select"
+                                                            required>
+
+                                                        <option value="employee"
+                                                                {% if user.role == "employee" %}selected{% endif %}>
+                                                            Employee
+                                                        </option>
+
+                                                        <option value="admin"
+                                                                {% if user.role == "admin" %}selected{% endif %}>
+                                                            Administrator
+                                                        </option>
+
+                                                    </select>
+
+                                                    <div class="form-text mt-2">
+                                                        Administrators can manage user accounts.
+                                                        Employees can use normal PartsTrack features.
+                                                    </div>
+
+                                                </div>
+
+                                                <div class="modal-footer">
+
+                                                    <button type="button"
+                                                            class="btn btn-secondary"
+                                                            data-bs-dismiss="modal">
+                                                        Cancel
+                                                    </button>
+
+                                                    <button type="submit"
+                                                            class="btn btn-primary">
+                                                        Save Role
+                                                    </button>
+
+                                                </div>
+
+                                            </form>
+
+                                        </div>
+                                    </div>
+                                </div>
+
+                            {% endif %}
+
+                            {% if user.id != current_user.id %}
+
+                                <form method="POST"
+                                    action="{{ url_for('main.toggle_user_active', user_id=user.id) }}"
+                                    class="d-inline">
+
+                                    {% if user.is_active %}
+
+                                        <button type="submit"
+                                                class="btn btn-outline-danger btn-sm"
+                                                onclick="return confirm('Are you sure you want to deactivate this user?');">
+                                            <i class="bi bi-person-x"></i>
+                                            Deactivate
+                                        </button>
+
+                                    {% else %}
+
+                                        <button type="submit"
+                                                class="btn btn-outline-success btn-sm"
+                                                onclick="return confirm('Are you sure you want to activate this user?');">
+                                            <i class="bi bi-person-check"></i>
+                                            Activate
+                                        </button>
+
+                                    {% endif %}
+
+                                </form>
+
+                            {% endif %}
+
+                            {% if user.id == current_user.id %}
+                                <span class="text-muted ms-2">
+                                    Current User
+                                </span>
+                            {% endif %}
+
+                            <!-- Reset Password Modal -->
+                            <div class="modal fade"
+                                id="resetPasswordModal{{ user.id }}"
+                                tabindex="-1"
+                                aria-hidden="true">
+
+                                <div class="modal-dialog">
+                                    <div class="modal-content">
+
+                                        <div class="modal-header">
+                                            <h5 class="modal-title">
+                                                Reset Password — {{ user.username }}
+                                            </h5>
+
+                                            <button type="button"
+                                                    class="btn-close"
+                                                    data-bs-dismiss="modal"
+                                                    aria-label="Close">
+                                            </button>
+                                        </div>
+
+                                        <form method="POST"
+                                            action="{{ url_for('main.reset_user_password', user_id=user.id) }}">
+
+                                            <div class="modal-body">
+                                                <label class="form-label">
+                                                    New Password
+                                                </label>
+
+                                                <input type="password"
+                                                    name="new_password"
+                                                    class="form-control"
+                                                    minlength="4"
+                                                    autocomplete="new-password"
+                                                    required>
+
+                                                <div class="form-text">
+                                                    Enter a new password for this user.
+                                                </div>
+                                            </div>
+
+                                            <div class="modal-footer">
+                                                <button type="button"
+                                                        class="btn btn-secondary"
+                                                        data-bs-dismiss="modal">
+                                                    Cancel
+                                                </button>
+
+                                                <button type="submit"
+                                                        class="btn btn-warning">
+                                                    Save New Password
+                                                </button>
+                                            </div>
+
+                                        </form>
+
+                                    </div>
+                                </div>
+                            </div>
+                        </td>
+
+                    </tr>
+
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="text-center text-muted">
+                            No user accounts found.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+
+            </table>
+        </div>
+
+    </div>
+</div>
+
+{% endblock %}
