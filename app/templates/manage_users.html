@@ -46,6 +46,8 @@
         <form method="POST"
               action="{{ url_for('main.create_user') }}">
 
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
             <div class="row g-3 align-items-end">
 
                 <div class="col-md-4">
@@ -207,6 +209,8 @@
                                             <form method="POST"
                                                 action="{{ url_for('main.change_user_role', user_id=user.id) }}">
 
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
                                                 <div class="modal-body">
 
                                                     <label class="form-label">
@@ -265,6 +269,8 @@
                                     action="{{ url_for('main.toggle_user_active', user_id=user.id) }}"
                                     class="d-inline">
 
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
                                     {% if user.is_active %}
 
                                         <button type="submit"
@@ -319,6 +325,8 @@
                                         <form method="POST"
                                             action="{{ url_for('main.reset_user_password', user_id=user.id) }}">
 
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            
                                             <div class="modal-body">
                                                 <label class="form-label">
                                                     New Password

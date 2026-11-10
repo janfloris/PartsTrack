@@ -30,7 +30,8 @@
     {% endwith %}
 
     <form method="POST" id="newWorkItemForm">
-
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        
         <!-- Work Item Details -->
         <div class="card shadow-sm mb-4">
 

@@ -65,6 +65,8 @@
             <form method="POST"
                 action="{{ url_for('main.add_technician') }}">
 
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
                 <div class="row align-items-end">
 
                     <div class="col-md-8 mb-3">
@@ -136,6 +138,8 @@
                                             class="d-inline"
                                             onsubmit="return confirm('Remove {{ technician.name }} from the technician list?');">
 
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
                                             <button type="submit"
                                                     class="btn btn-sm btn-outline-danger">
 
@@ -189,6 +193,8 @@
             <!-- Add Supplier -->
             <form method="POST"
                 action="{{ url_for('main.add_supplier') }}">
+
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
                 <div class="row align-items-end">
 
@@ -261,6 +267,8 @@
                                             class="d-inline"
                                             onsubmit="return confirm('Remove {{ supplier.name }} from the supplier list?');">
 
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            
                                             <button type="submit"
                                                     class="btn btn-sm btn-outline-danger">
 
