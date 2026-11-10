@@ -34,6 +34,7 @@ def admin_required(view_function):
 
     return wrapped_view
 
+
 @main.before_request
 def require_login():
     if request.endpoint == "main.login":
@@ -41,6 +42,16 @@ def require_login():
 
     if not current_user.is_authenticated:
         return redirect(url_for("main.login"))
+
+    if not current_user.is_active:
+        logout_user()
+        flash(
+            "Your account has been deactivated. "
+            "Please contact an administrator.",
+            "danger"
+        )
+        return redirect(url_for("main.login"))
+
 
 
 @main.route("/login", methods=["GET", "POST"])
