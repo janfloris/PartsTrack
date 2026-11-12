@@ -9,10 +9,77 @@ from flask import (
 )
 
 from app import db
-from app.models import WorkItem, PartsOrder, PartLine, Technician, Supplier
+from flask_login import (
+    current_user,
+    login_user,
+    logout_user
+)
+from app.models import WorkItem, PartsOrder, PartLine, Technician, Supplier, User
 from datetime import date, datetime
+from functools import wraps
+from flask import abort
 
 main = Blueprint("main", __name__)
+
+def admin_required(view_function):
+    @wraps(view_function)
+    def wrapped_view(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return redirect(url_for("main.login"))
+
+        if not current_user.is_admin:
+            abort(403)
+
+        return view_function(*args, **kwargs)
+
+    return wrapped_view
+
+
+@main.before_request
+def require_login():
+    if request.endpoint == "main.login":
+        return None
+
+    if not current_user.is_authenticated:
+        return redirect(url_for("main.login"))
+
+    if not current_user.is_active:
+        logout_user()
+        flash(
+            "Your account has been deactivated. "
+            "Please contact an administrator.",
+            "danger"
+        )
+        return redirect(url_for("main.login"))
+
+
+
+@main.route("/login", methods=["GET", "POST"])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for("main.dashboard"))
+
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+
+        user = User.query.filter_by(username=username).first()
+
+        if user and user.is_active and user.check_password(password):
+            login_user(user)
+            flash("You have successfully logged in.", "success")
+            return redirect(url_for("main.dashboard"))
+
+        flash("Invalid username or password.", "danger")
+
+    return render_template("login.html")
+
+
+@main.route("/logout", methods=["POST"])
+def logout():
+    logout_user()
+    flash("You have been logged out.", "success")
+    return redirect(url_for("main.login"))
 
 @main.route("/")
 def dashboard():
@@ -133,7 +200,6 @@ def work_item_details(item_id):
         status=status,
         suppliers=suppliers
     )
-
 
 @main.route("/new-work-item", methods=["GET", "POST"])
 def new_work_item():
@@ -783,3 +849,140 @@ def delete_supplier(supplier_id):
     flash(f"Supplier '{name}' removed from the list.", "success")
 
     return redirect(url_for("main.supplier_settings"))
+
+@main.route("/users")
+@admin_required
+def manage_users():
+    users = User.query.order_by(User.username.asc()).all()
+
+    return render_template(
+        "manage_users.html",
+        users=users
+    )
+
+@main.route("/users/create", methods=["POST"])
+@admin_required
+def create_user():
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "")
+    role = request.form.get("role", "employee")
+
+    if not username or not password:
+        flash("Username and password are required.", "danger")
+        return redirect(url_for("main.manage_users"))
+
+    if len(username) > 80:
+        flash("Username must be 80 characters or fewer.", "danger")
+        return redirect(url_for("main.manage_users"))
+
+    if len(password) < 4:
+        flash("Password must be at least 4 characters.", "danger")
+        return redirect(url_for("main.manage_users"))
+
+    if role not in ("admin", "employee"):
+        flash("Invalid user role.", "danger")
+        return redirect(url_for("main.manage_users"))
+
+    existing_user = User.query.filter_by(username=username).first()
+
+    if existing_user:
+        flash("That username already exists.", "danger")
+        return redirect(url_for("main.manage_users"))
+
+    new_user = User(
+        username=username,
+        role=role,
+        is_active=True
+    )
+
+    new_user.set_password(password)
+
+    db.session.add(new_user)
+    db.session.commit()
+
+    flash(f"User '{username}' created successfully.", "success")
+    return redirect(url_for("main.manage_users"))
+
+@main.route("/users/<int:user_id>/reset-password", methods=["POST"])
+@admin_required
+def reset_user_password(user_id):
+    user = db.get_or_404(User, user_id)
+
+    new_password = request.form.get("new_password", "")
+
+    if len(new_password) < 4:
+        flash("Password must be at least 4 characters.", "danger")
+        return redirect(url_for("main.manage_users"))
+
+    user.set_password(new_password)
+    db.session.commit()
+
+    flash(
+        f"Password for '{user.username}' updated successfully.",
+        "success"
+    )
+
+    return redirect(url_for("main.manage_users"))
+
+@main.route("/users/<int:user_id>/change-role", methods=["POST"])
+@admin_required
+def change_user_role(user_id):
+    user = db.get_or_404(User, user_id)
+
+    new_role = request.form.get("role", "")
+
+    if new_role not in ("admin", "employee"):
+        flash("Invalid user role.", "danger")
+        return redirect(url_for("main.manage_users"))
+
+    # Prevent administrators from removing their own admin access
+    if user.id == current_user.id and new_role != "admin":
+        flash(
+            "You cannot remove your own administrator privileges.",
+            "danger"
+        )
+        return redirect(url_for("main.manage_users"))
+
+    if user.role == new_role:
+        flash("This user already has the selected role.", "warning")
+        return redirect(url_for("main.manage_users"))
+
+    user.role = new_role
+    db.session.commit()
+
+    flash(
+        f"Role for '{user.username}' updated successfully.",
+        "success"
+    )
+
+    return redirect(url_for("main.manage_users"))
+
+@main.route("/users/<int:user_id>/toggle-active", methods=["POST"])
+@admin_required
+def toggle_user_active(user_id):
+    user = db.get_or_404(User, user_id)
+
+    # Prevent administrators from disabling their own account
+    if user.id == current_user.id:
+        flash(
+            "You cannot deactivate your own account.",
+            "danger"
+        )
+        return redirect(url_for("main.manage_users"))
+
+    user.is_active = not user.is_active
+
+    db.session.commit()
+
+    if user.is_active:
+        flash(
+            f"User '{user.username}' activated successfully.",
+            "success"
+        )
+    else:
+        flash(
+            f"User '{user.username}' deactivated successfully.",
+            "success"
+        )
+
+    return redirect(url_for("main.manage_users"))

@@ -159,6 +159,8 @@
     <form method="POST"
           action="{{ url_for('main.add_parts_order', item_id=work_item.id) }}">
 
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
         <div class="row">
 
             <div class="col-md-4 mb-3">
@@ -242,6 +244,8 @@
                 <form method="POST"
                     action="{{ url_for('main.add_part', order_id=order.id) }}"
                     class="mb-4">
+
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
                     <div class="row align-items-end">
 
@@ -344,6 +348,8 @@
                                         action="{{ url_for('main.update_received', part_id=part.id) }}"
                                         class="d-flex align-items-center gap-2">
 
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        
                                         <input type="number"
                                             name="quantity_received"
                                             class="form-control form-control-sm"

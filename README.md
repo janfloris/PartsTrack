@@ -87,7 +87,7 @@ interpreter selection.
 ### 4. Install dependencies
 
 ``` powershell
-python -m pip install Flask Flask-SQLAlchemy
+python -m pip install Flask Flask-SQLAlchemy Flask-Login
 ```
 
 If the project has a `requirements.txt` file, install from it instead:

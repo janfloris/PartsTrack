@@ -49,6 +49,8 @@
                   action="{{ url_for('main.delete_old_archived_items') }}"
                   onsubmit="return confirm('Are you sure you want to permanently delete the selected archived Work Items and all associated supplier orders and parts? This cannot be undone.');">
 
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                
                 <div class="row align-items-end">
 
                     <div class="col-md-4 mb-3">
@@ -149,6 +151,8 @@
                                 <form method="POST"
                                       action="{{ url_for('main.restore_work_item', item_id=item.id) }}"
                                       class="d-inline">
+
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
                                     <button type="submit"
                                             class="btn btn-sm btn-success">
