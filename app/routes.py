@@ -14,7 +14,7 @@ from flask_login import (
     login_user,
     logout_user
 )
-from app.models import WorkItem, PartsOrder, PartLine, Technician, Supplier, User
+from app.models import WorkItem, PartsOrder, PartLine, Technician, Supplier, User, Notification 
 from datetime import date, datetime
 from functools import wraps
 from flask import abort
@@ -603,9 +603,15 @@ def add_part(order_id):
         )
     )
 
+
 @main.route("/part/<int:part_id>/update-received", methods=["POST"])
 def update_received(part_id):
     part = db.get_or_404(PartLine, part_id)
+
+    work_item = part.parts_order.work_item
+
+    # Record receiving status before updating the quantity.
+    previous_status = get_receiving_status(work_item)
 
     try:
         quantity_received = int(
@@ -614,10 +620,7 @@ def update_received(part_id):
     except ValueError:
         flash("Received quantity must be a whole number.", "danger")
         return redirect(
-            url_for(
-                "main.work_item_details",
-                item_id=part.parts_order.work_item_id
-            )
+            url_for("main.work_item_details", item_id=work_item.id)
         )
 
     if quantity_received < 0:
@@ -631,16 +634,21 @@ def update_received(part_id):
 
     else:
         part.quantity_received = quantity_received
+
+        # Generate notifications if status changes to Green.
+        notify_when_green(work_item, previous_status)
+
         db.session.commit()
 
-        flash("Received quantity updated successfully!", "success")
+        flash(
+            "Received quantity updated successfully!",
+            "success"
+        )
 
     return redirect(
-        url_for(
-            "main.work_item_details",
-            item_id=part.parts_order.work_item_id
-        )
+        url_for("main.work_item_details", item_id=work_item.id)
     )
+
 
 @main.route("/part/<int:part_id>/edit", methods=["GET", "POST"])
 def edit_part(part_id):
@@ -986,3 +994,125 @@ def toggle_user_active(user_id):
         )
 
     return redirect(url_for("main.manage_users"))
+
+
+def get_receiving_status(work_item):
+    total_ordered = sum(
+        part.quantity_ordered
+        for order in work_item.parts_orders
+        for part in order.parts
+    )
+
+    total_received = sum(
+        part.quantity_received
+        for order in work_item.parts_orders
+        for part in order.parts
+    )
+
+    if total_ordered == 0 or total_received == 0:
+        return "Red"
+
+    if total_received >= total_ordered:
+        return "Green"
+
+    return "Yellow"
+
+
+def notify_when_green(work_item, previous_status):
+    new_status = get_receiving_status(work_item)
+
+    # Notify only when the work item changes to Green.
+    if previous_status == "Green" or new_status != "Green":
+        return
+
+    active_users = User.query.filter_by(is_active=True).all()
+
+    for user in active_users:
+        notification = Notification(
+            user_id=user.id,
+            work_item_id=work_item.id,
+            message=(
+                f"All parts received for {work_item.type} "
+                f"{work_item.number}. Ready for scheduling."
+            )
+        )
+
+        db.session.add(notification)
+
+
+@main.app_context_processor
+def inject_notification_count():
+    unread_count = 0
+    recent_notifications = []
+
+    if current_user.is_authenticated:
+        unread_count = Notification.query.filter_by(
+            user_id=current_user.id,
+            is_read=False
+        ).count()
+
+        recent_notifications = (
+            Notification.query.filter_by(
+                user_id=current_user.id
+            )
+            .order_by(
+                Notification.created_at.desc(),
+                Notification.id.desc()
+            )
+            .limit(5)
+            .all()
+        )
+
+    return {
+        "unread_notification_count": unread_count,
+        "recent_notifications": recent_notifications
+    }
+
+
+@main.route("/notifications")
+def notifications():
+    user_notifications = Notification.query.filter_by(
+        user_id=current_user.id
+    ).order_by(
+        Notification.created_at.desc(),
+        Notification.id.desc()
+    ).all()
+
+    return render_template(
+        "notifications.html",
+        notifications=user_notifications
+    )
+
+@main.route("/notifications/<int:notification_id>/read", methods=["POST"])
+def mark_notification_read(notification_id):
+    notification = db.get_or_404(Notification, notification_id)
+
+    # Users can only update their own notifications.
+    if notification.user_id != current_user.id:
+        abort(403)
+
+    if not notification.is_read:
+        notification.is_read = True
+        db.session.commit()
+
+    return redirect(url_for("main.notifications"))
+
+@main.route("/notifications/<int:notification_id>/open", methods=["POST"])
+def open_notification(notification_id):
+    notification = db.get_or_404(Notification, notification_id)
+
+    # Make sure the notification belongs to the logged-in user.
+    if notification.user_id != current_user.id:
+        abort(403)
+
+    work_item_id = notification.work_item_id
+
+    # Mark the notification as read.
+    if not notification.is_read:
+        notification.is_read = True
+        db.session.commit()
+
+    # Open the associated work item.
+    return redirect(
+        url_for("main.work_item_details", item_id=work_item_id)
+    )

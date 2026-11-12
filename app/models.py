@@ -175,3 +175,49 @@ class User(UserMixin, db.Model):
 
     def __repr__(self):
         return f"<User {self.username}>"
+
+class Notification(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("user.id"),
+        nullable=False
+    )
+
+    work_item_id = db.Column(
+        db.Integer,
+        db.ForeignKey("work_item.id"),
+        nullable=False
+    )
+
+    message = db.Column(
+        db.String(500),
+        nullable=False
+    )
+
+    is_read = db.Column(
+        db.Boolean,
+        default=False,
+        nullable=False
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+
+    user = db.relationship(
+        "User",
+        backref="notifications"
+    )
+
+    work_item = db.relationship(
+        "WorkItem",
+        backref="notifications"
+    )
+
+    def __repr__(self):
+        return f"<Notification {self.id}>"
+    
