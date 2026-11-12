@@ -112,5 +112,5 @@ document.addEventListener("DOMContentLoaded", () => {
     checkNotifications();
 
     // Check for new notifications every 15 seconds.
-    setInterval(checkNotifications, 15000);
+    setInterval(checkNotifications, 60000);
 });
