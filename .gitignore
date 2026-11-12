@@ -13,3 +13,7 @@ __pycache__/
 
 # Database backups
 *.bak
+
+# Environment-specific configuration
+config.py
+config.py.production-backup
