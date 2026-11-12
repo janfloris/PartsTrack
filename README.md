@@ -1,6 +1,6 @@
 # PartsTrack
 
-PartsTrack is a local web application for tracking parts ordered for
+PartsTrack is a web application for tracking parts ordered for
 dealership work items and monitoring receiving progress.
 
 ## Features

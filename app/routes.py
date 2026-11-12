@@ -17,7 +17,7 @@ from flask_login import (
 from app.models import WorkItem, PartsOrder, PartLine, Technician, Supplier, User, Notification 
 from datetime import date, datetime
 from functools import wraps
-from flask import abort
+from flask import abort, jsonify
 
 main = Blueprint("main", __name__)
 
@@ -1116,3 +1116,30 @@ def open_notification(notification_id):
     return redirect(
         url_for("main.work_item_details", item_id=work_item_id)
     )
+
+
+@main.route("/notifications/check")
+def check_notifications():
+    unread_notifications = (
+        Notification.query.filter_by(
+            user_id=current_user.id,
+            is_read=False
+        )
+        .order_by(
+            Notification.created_at.desc(),
+            Notification.id.desc()
+        )
+        .all()
+    )
+
+    return jsonify({
+        "unread_count": len(unread_notifications),
+        "notifications": [
+            {
+                "id": notification.id,
+                "message": notification.message,
+                "work_item_id": notification.work_item_id
+            }
+            for notification in unread_notifications
+        ]
+    })
