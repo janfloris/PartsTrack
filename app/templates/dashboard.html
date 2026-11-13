@@ -86,6 +86,11 @@
                                 Fully Received
                             </option>
 
+                            <option value="Blue"
+                                {% if status_filter == "Blue" %}selected{% endif %}>
+                                Booked
+                            </option>
+
                         </select>
                     </div>
 
@@ -135,7 +140,8 @@
     <!-- Dashboard Counters -->
     <div class="row mb-4">
 
-        <div class="col-md-3">
+        <!-- Active Work Items -->
+        <div class="col-md">
             <div class="card shadow-sm">
                 <div class="card-body">
                     <h6 class="text-muted">Active Work Items</h6>
@@ -144,7 +150,8 @@
             </div>
         </div>
 
-        <div class="col-md-3">
+        <!-- Fully Received Work Items -->
+        <div class="col-md">
             <div class="card shadow-sm border-success">
                 <div class="card-body">
                     <h6 class="text-muted">All Parts Received</h6>
@@ -153,7 +160,8 @@
             </div>
         </div>
 
-        <div class="col-md-3">
+        <!-- Partially Received Work Items -->
+        <div class="col-md">
             <div class="card shadow-sm border-warning">
                 <div class="card-body">
                     <h6 class="text-muted">Partially Received</h6>
@@ -162,11 +170,22 @@
             </div>
         </div>
 
-        <div class="col-md-3">
+        <!-- Nothing Received Work Items -->
+        <div class="col-md">
             <div class="card shadow-sm border-danger">
                 <div class="card-body">
                     <h6 class="text-muted">Nothing Received</h6>
                     <h3 class="text-danger">{{ red_count }}</h3>
+                </div>
+            </div>
+        </div>
+
+        <!-- Booked Work Items -->
+        <div class="col-md">
+            <div class="card shadow-sm border-primary">
+                <div class="card-body">
+                    <h6 class="text-muted">Booked</h6>
+                    <h3 class="text-primary">{{ booked_count }}</h3>
                 </div>
             </div>
         </div>
@@ -268,7 +287,13 @@
                             <!-- Receiving Status -->
                             <td>
 
-                                {% if item.receiving_status == "Green" %}
+                                {% if item.receiving_status == "Blue" %}
+
+                                    <span class="badge bg-primary">
+                                        Booked
+                                    </span>
+
+                                {% elif item.receiving_status == "Green" %}
 
                                     <span class="badge bg-success">
                                         All Received
@@ -298,7 +323,7 @@
                                     method="POST"
                                     action="{{ url_for('main.update_work_item_dashboard', item_id=item.id) }}"
                                     class="mb-2"
-                                    data-receiving-status="{{ item.receiving_status }}"
+                                    data-receiving-status="{{ item.parts_status }}"
                                     onsubmit="return confirmAppointmentSave(this);">
 
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
