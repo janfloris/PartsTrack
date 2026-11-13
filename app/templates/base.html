@@ -84,7 +84,11 @@
 
                         {% for notification in recent_notifications %}
 
-                            <div class="dropdown-item-text border-bottom py-2 px-3">
+                            
+                        <div class="dropdown-item-text border-bottom py-2 px-3"
+                            data-notification-id="{{ notification.id }}"
+                            data-notification-unread="{{ 'true' if not notification.is_read else 'false' }}">
+
 
                                 <div class="d-flex align-items-start gap-2">
 
@@ -122,6 +126,26 @@
                                         </form>
 
                                     </div>
+
+                                    <!-- Dismiss Notification -->
+                                    <form method="POST"
+                                          action="{{ url_for('main.dismiss_notification', notification_id=notification.id) }}"
+                                          class="m-0 dismiss-notification-form">
+
+                                        <input type="hidden"
+                                               name="csrf_token"
+                                               value="{{ csrf_token() }}">
+
+                                        <button type="submit"
+                                                class="btn btn-sm btn-outline-danger border-0"
+                                                title="Dismiss Notification"
+                                                aria-label="Dismiss Notification">
+
+                                            <i class="bi bi-x-lg"></i>
+
+                                        </button>
+
+                                    </form>
 
                                 </div>
 

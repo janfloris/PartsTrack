@@ -29,6 +29,100 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    // Dismiss notifications without leaving the current page.
+    document.addEventListener("submit", async (event) => {
+        const form = event.target.closest(
+            ".dismiss-notification-form"
+        );
+
+        if (!form) return;
+
+        event.preventDefault();
+
+        const button = form.querySelector("button[type='submit']");
+        const notificationElement = form.closest(
+            "[data-notification-id]"
+        );
+
+        if (button) button.disabled = true;
+
+        try {
+            const response = await fetch(form.action, {
+                method: "POST",
+                body: new FormData(form),
+                headers: {
+                    "X-Requested-With": "XMLHttpRequest"
+                },
+                credentials: "same-origin"
+            });
+
+            if (!response.ok) {
+                throw new Error("Unable to dismiss notification");
+            }
+
+            const data = await response.json();
+
+            // Remove the notification from the dropdown.
+            if (notificationElement) {
+                notificationElement.remove();
+            }
+
+            // Update the notification bell badge.
+            const badge = document.getElementById(
+                "notification-count"
+            );
+
+            if (badge) {
+                badge.textContent = data.unread_count;
+                badge.style.display =
+                    data.unread_count > 0 ? "" : "none";
+            }
+
+            // Update the dropdown's "New" count.
+            const dropdown = document.querySelector(
+                '[aria-labelledby="notificationDropdown"]'
+            );
+
+            if (dropdown) {
+                const newBadge = Array.from(
+                    dropdown.querySelectorAll(".badge")
+                ).find(element =>
+                    element.textContent.trim().endsWith("New")
+                );
+
+                if (newBadge) {
+                    newBadge.textContent =
+                        `${data.unread_count} New`;
+
+                    newBadge.style.display =
+                        data.unread_count > 0 ? "" : "none";
+                }
+
+                // Display an empty message when all items are gone.
+                if (!dropdown.querySelector("[data-notification-id]") &&
+                    !dropdown.querySelector(".notification-empty-message")) {
+
+                    const emptyMessage = document.createElement("div");
+                    emptyMessage.className =
+                        "notification-empty-message text-center text-muted py-4";
+                    emptyMessage.textContent = "No notifications yet.";
+
+                    const footer = dropdown.querySelector(".p-2.text-center");
+
+                    if (footer) {
+                        footer.before(emptyMessage);
+                    }
+                }
+            }
+
+        } catch (error) {
+            console.error("Notification dismissal failed:", error);
+            alert("Unable to dismiss notification. Please try again.");
+
+            if (button) button.disabled = false;
+        }
+    });
+
     // Prevent duplicate notification checks across open tabs.
     const shownNotifications = new Set();
     let initialized = false;
@@ -111,6 +205,6 @@ document.addEventListener("DOMContentLoaded", () => {
     // Establish initial notification state.
     checkNotifications();
 
-    // Check for new notifications every 15 seconds.
-    setInterval(checkNotifications, 60000);
+    // Check for new notifications every 30 seconds.
+    setInterval(checkNotifications, 30000);
 });
