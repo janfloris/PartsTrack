@@ -117,7 +117,6 @@ data, protect the database file and avoid sharing it in GitHub.
 
 Before pushing the project to GitHub:
 
--   Do not commit `partstrack.db` if it contains real or sensitive data.
 -   Do not commit your virtual environment (`.venv`).
 -   Do not commit secret keys or credentials.
 -   Consider adding a `.gitignore` file for local and generated files.
@@ -126,3 +125,14 @@ Before pushing the project to GitHub:
 
 PartsTrack is an actively developed project. Features and setup details
 may change as development continues.
+
+## Git publish commands
+ssh -i "$env:USERPROFILE\.ssh\id_ed25519" user@ip
+cd ~/PartsTrack
+python3 backup_database.py
+git status
+git fetch origin main
+git diff --name-only HEAD..origin/main
+git pull --ff-only origin main
+sudo systemctl restart partstrack
+sudo systemctl status partstrack --no-pager

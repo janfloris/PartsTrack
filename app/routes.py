@@ -83,6 +83,7 @@ def logout():
     flash("You have been logged out.", "success")
     return redirect(url_for("main.login"))
 
+
 @main.route("/")
 def dashboard():
     work_items = WorkItem.query.filter_by(
@@ -94,8 +95,9 @@ def dashboard():
     green_count = 0
     yellow_count = 0
     red_count = 0
+    booked_count = 0
 
-    # Calculate receiving status and counts for all active Work Items
+    # Calculate status and counts for all active Work Items
     for item in work_items:
 
         total_ordered = sum(
@@ -110,16 +112,27 @@ def dashboard():
             for part in order.parts
         )
 
+        # Calculate the actual parts receiving status
         if total_ordered == 0 or total_received == 0:
-            item.receiving_status = "Red"
+            item.parts_status = "Red"
 
         elif total_received >= total_ordered:
-            item.receiving_status = "Green"
+            item.parts_status = "Green"
 
         else:
-            item.receiving_status = "Yellow"
+            item.parts_status = "Yellow"
+        
+        # Appointment date takes priority for dashboard display
+        if item.appointment_date is not None:
+            item.receiving_status = "Blue"
+        else:
+            item.receiving_status = item.parts_status
 
-        if item.receiving_status == "Green":
+        # Count Work Items by status
+        if item.receiving_status == "Blue":
+            booked_count += 1
+
+        elif item.receiving_status == "Green":
             green_count += 1
 
         elif item.receiving_status == "Yellow":
@@ -144,8 +157,8 @@ def dashboard():
             or search_query in (item.type or "").lower()
         ]
 
-    # Filter Work Items by receiving status
-    if status_filter in ["Red", "Yellow", "Green"]:
+    # Filter Work Items by status
+    if status_filter in ["Red", "Yellow", "Green", "Blue"]:
         filtered_items = [
             item for item in filtered_items
             if item.receiving_status == status_filter
@@ -162,10 +175,12 @@ def dashboard():
         green_count=green_count,
         yellow_count=yellow_count,
         red_count=red_count,
+        booked_count=booked_count,
         search_query=search_query,
         status_filter=status_filter,
         technicians=technicians
     )
+
 
 @main.route("/work-item/<int:item_id>")
 def work_item_details(item_id):
