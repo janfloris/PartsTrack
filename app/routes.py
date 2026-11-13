@@ -5,14 +5,16 @@ from flask import (
     redirect,
     url_for,
     request,
-    flash
+    flash,
+    abort
 )
 
 from app import db
 from flask_login import (
     current_user,
     login_user,
-    logout_user
+    logout_user,
+    login_required
 )
 from app.models import WorkItem, PartsOrder, PartLine, Technician, Supplier, User, Notification 
 from datetime import date, datetime
@@ -704,6 +706,7 @@ def edit_part(part_id):
 
     return render_template("edit_part.html", part=part)
 
+
 @main.route("/parts-order/<int:order_id>/edit", methods=["GET", "POST"])
 def edit_parts_order(order_id):
     parts_order = db.get_or_404(PartsOrder, order_id)
@@ -740,6 +743,7 @@ def edit_parts_order(order_id):
         suppliers=suppliers
     )
 
+
 @main.route("/work-item/<int:item_id>/update-dashboard", methods=["POST"])
 def update_work_item_dashboard(item_id):
     item = WorkItem.query.get_or_404(item_id)
@@ -766,7 +770,9 @@ def update_work_item_dashboard(item_id):
 
     return redirect(url_for("main.dashboard"))
 
+
 @main.route("/settings/technicians")
+@login_required
 def technician_settings():
     technicians = Technician.query.order_by(
         Technician.name.asc()
@@ -781,6 +787,49 @@ def technician_settings():
         technicians=technicians,
         suppliers=suppliers
     )
+
+
+@main.route("/settings/notifications/delete-old", methods=["POST"])
+@login_required
+def delete_old_notifications():
+    # Only administrators can permanently delete
+    # notifications across all users.
+    if not current_user.is_admin:
+        abort(403)
+
+    cutoff_date_string = request.form.get(
+        "cutoff_date", ""
+    ).strip()
+
+    # Validate the selected date.
+    try:
+        cutoff_date = datetime.strptime(
+            cutoff_date_string,
+            "%Y-%m-%d"
+        )
+    except ValueError:
+        flash("Please select a valid cutoff date.", "danger")
+        return redirect(url_for("main.technician_settings"))
+
+    # Notifications are stored using UTC timestamps.
+    # Delete anything before midnight UTC on the
+    # selected date, across ALL users.
+    deleted_count = (
+        Notification.query
+        .filter(Notification.created_at < cutoff_date)
+        .delete(synchronize_session=False)
+    )
+
+    db.session.commit()
+
+    flash(
+        f"Successfully deleted {deleted_count} old "
+        f"notification(s) across all users.",
+        "success"
+    )
+
+    return redirect(url_for("main.technician_settings"))
+
 
 @main.route("/settings/technicians/add", methods=["POST"])
 def add_technician():
@@ -805,6 +854,7 @@ def add_technician():
 
     return redirect(url_for("main.technician_settings"))
 
+
 @main.route("/settings/technicians/delete/<int:technician_id>", methods=["POST"])
 def delete_technician(technician_id):
     technician = Technician.query.get_or_404(technician_id)
@@ -818,9 +868,11 @@ def delete_technician(technician_id):
 
     return redirect(url_for("main.technician_settings"))
 
+
 @main.route("/settings/suppliers")
 def supplier_settings():
     return redirect(url_for("main.technician_settings"))
+
 
 @main.route("/settings/suppliers/add", methods=["POST"])
 def add_supplier():
@@ -845,6 +897,7 @@ def add_supplier():
 
     return redirect(url_for("main.supplier_settings"))
 
+
 @main.route("/settings/suppliers/delete/<int:supplier_id>", methods=["POST"])
 def delete_supplier(supplier_id):
     supplier = Supplier.query.get_or_404(supplier_id)
@@ -858,6 +911,7 @@ def delete_supplier(supplier_id):
 
     return redirect(url_for("main.supplier_settings"))
 
+
 @main.route("/users")
 @admin_required
 def manage_users():
@@ -867,6 +921,7 @@ def manage_users():
         "manage_users.html",
         users=users
     )
+
 
 @main.route("/users/create", methods=["POST"])
 @admin_required
@@ -911,6 +966,7 @@ def create_user():
     flash(f"User '{username}' created successfully.", "success")
     return redirect(url_for("main.manage_users"))
 
+
 @main.route("/users/<int:user_id>/reset-password", methods=["POST"])
 @admin_required
 def reset_user_password(user_id):
@@ -931,6 +987,7 @@ def reset_user_password(user_id):
     )
 
     return redirect(url_for("main.manage_users"))
+
 
 @main.route("/users/<int:user_id>/change-role", methods=["POST"])
 @admin_required
@@ -964,6 +1021,7 @@ def change_user_role(user_id):
     )
 
     return redirect(url_for("main.manage_users"))
+
 
 @main.route("/users/<int:user_id>/toggle-active", methods=["POST"])
 @admin_required
@@ -1070,6 +1128,7 @@ def inject_notification_count():
 
 
 @main.route("/notifications")
+@login_required
 def notifications():
     user_notifications = Notification.query.filter_by(
         user_id=current_user.id
@@ -1083,7 +1142,9 @@ def notifications():
         notifications=user_notifications
     )
 
+
 @main.route("/notifications/<int:notification_id>/read", methods=["POST"])
+@login_required
 def mark_notification_read(notification_id):
     notification = db.get_or_404(Notification, notification_id)
 
@@ -1097,7 +1158,40 @@ def mark_notification_read(notification_id):
 
     return redirect(url_for("main.notifications"))
 
+
+
+@main.route("/notifications/<int:notification_id>/dismiss", methods=["POST"])
+@login_required
+def dismiss_notification(notification_id):
+    notification = db.get_or_404(Notification, notification_id)
+
+    # Users can only dismiss their own notifications.
+    if notification.user_id != current_user.id:
+        abort(403)
+
+    # Permanently delete the notification.
+    db.session.delete(notification)
+    db.session.commit()
+
+    # Return JSON for background JavaScript requests.
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        unread_count = Notification.query.filter_by(
+            user_id=current_user.id,
+            is_read=False
+        ).count()
+
+        return jsonify({
+            "success": True,
+            "unread_count": unread_count
+        })
+
+    # Normal form submission fallback.
+    return redirect(url_for("main.notifications"))
+
+
+
 @main.route("/notifications/<int:notification_id>/open", methods=["POST"])
+@login_required
 def open_notification(notification_id):
     notification = db.get_or_404(Notification, notification_id)
 
@@ -1119,6 +1213,7 @@ def open_notification(notification_id):
 
 
 @main.route("/notifications/check")
+@login_required
 def check_notifications():
     unread_notifications = (
         Notification.query.filter_by(
