@@ -8,7 +8,7 @@ from flask import (
     flash,
     abort
 )
-
+from sqlalchemy.exc import IntegrityError
 from app import db
 from flask_login import (
     current_user,
@@ -236,6 +236,22 @@ def new_work_item():
             )
             return redirect(url_for("main.new_work_item"))
 
+
+        # Check whether this Work Item Number and Type already exist
+        existing_work_item = WorkItem.query.filter_by(
+            number=number,
+            type=item_type
+        ).first()
+
+        if existing_work_item:
+            flash(
+                f"Work Item {number} ({item_type}) already exists. "
+                "Please use a different Work Item Number or Type.",
+                "danger"
+            )
+            return redirect(url_for("main.new_work_item"))
+
+
         try:
             order_count = int(request.form.get("order_count", "0"))
         except ValueError:
@@ -396,16 +412,44 @@ def new_work_item():
 
                 db.session.add(part)
 
-        try:
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
-            flash(
-                "An error occurred while saving the Work Item "
-                "and its Supplier Orders.",
-                "danger"
-            )
-            return redirect(url_for("main.new_work_item"))
+            try:
+                db.session.commit()
+
+            except IntegrityError:
+                db.session.rollback()
+
+                # Check whether the failure was caused by a duplicate
+                existing_work_item = WorkItem.query.filter_by(
+                    number=number,
+                    type=item_type
+                ).first()
+
+                if existing_work_item:
+                    flash(
+                        f"Work Item {number} ({item_type}) already exists. "
+                        "Duplicate Work Items are not allowed.",
+                        "danger"
+                    )
+                else:
+                    flash(
+                        "A database constraint prevented the Work Item "
+                        "from being saved.",
+                        "danger"
+                    )
+
+                return redirect(url_for("main.new_work_item"))
+
+            except Exception:
+                db.session.rollback()
+
+                flash(
+                    "An error occurred while saving the Work Item "
+                    "and its Supplier Orders.",
+                    "danger"
+                )
+
+                return redirect(url_for("main.new_work_item"))
+
 
         flash(
             "Work Item and Supplier Orders created successfully!",
