@@ -37,6 +37,25 @@
         </div>
     </div>
 
+    <!-- Dashboard Refresh Controls -->
+    <div class="d-flex justify-content-end align-items-center gap-3 mb-3">
+
+        <!-- Auto-Refresh Status -->
+        <span id="autoRefreshStatus" class="badge bg-success">
+            <i class="bi bi-arrow-repeat"></i>
+            Auto-refresh active (60s)
+        </span>
+
+        <!-- Manual Refresh Button -->
+        <button type="button"
+                id="refreshNowButton"
+                class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-arrow-clockwise"></i>
+            Refresh Now
+        </button>
+
+    </div>
+
     <!-- Search and Filters -->
     <div class="card shadow-sm mb-4">
         <div class="card-body">
@@ -429,11 +448,160 @@
             }
         }
 
+        // Allow the Save form to submit without a navigation warning
+        allowPageExit = true;
+
         // Continue with saving
         return true;
     }
+
+    // Dashboard refresh settings
+    const REFRESH_INTERVAL = 60000; // 60 seconds
+
+    let refreshTimer = null;
+    let autoRefreshPaused = false;
+
+    // Refresh the dashboard
+    function refreshDashboard() {
+        window.location.reload();
+    }
+
+
+    // Start or restart the automatic refresh timer
+    function startAutoRefresh() {
+        clearInterval(refreshTimer);
+
+        refreshTimer = setInterval(() => {
+
+            // Check the current editing state before refreshing
+            updateRefreshStatus();
+
+            // Never refresh while editing or with unsaved changes
+            if (autoRefreshPaused) {
+                return;
+            }
+
+            // Allow automatic refresh without an unload warning
+            allowPageExit = true;
+
+            refreshDashboard();
+
+        }, REFRESH_INTERVAL);
+    }
+
+
+    // Manual Refresh Now button
+    document.getElementById("refreshNowButton")
+        .addEventListener("click", function () {
+
+            if (hasUnsavedChanges()) {
+                const confirmed = confirm(
+                    "You have unsaved changes.\n\n" +
+                    "Refreshing now will discard those changes.\n\n" +
+                    "Do you want to continue?"
+                );
+
+                if (!confirmed) {
+                    return;
+                }
+            }
+
+            // Allow this intentional refresh without a second warning
+            allowPageExit = true;
+            refreshDashboard();
+        });
+
+        // Warn before leaving the dashboard with unsaved changes
+        let allowPageExit = false;
+
+        window.addEventListener("beforeunload", function (event) {
+
+            if (hasUnsavedChanges() && !allowPageExit) {
+                event.preventDefault();
+                event.returnValue = "";
+            }
+
+        });
+
+    // Track dashboard editing and unsaved changes
+    const editableFields = Array.from(
+        document.querySelectorAll(
+            'select[name="technician"], ' +
+            'textarea[name="notes"], ' +
+            'input[name="appointment_date"]'
+        )
+    );
+
+    // Remember each field's original value
+    const originalValues = new Map();
+
+    editableFields.forEach(field => {
+        originalValues.set(field, field.value);
+    });
+
+    // Check whether any field has unsaved changes
+    function hasUnsavedChanges() {
+        return editableFields.some(field =>
+            field.value !== originalValues.get(field)
+        );
+    }
+
+    // Update the refresh status indicator
+    function updateRefreshStatus() {
+        const status = document.getElementById("autoRefreshStatus");
+        const wasPaused = autoRefreshPaused;
+
+        const isEditing = editableFields.includes(
+            document.activeElement
+        ) && document.activeElement !== document.body;
+
+        if (hasUnsavedChanges()) {
+            autoRefreshPaused = true;
+
+            status.className = "badge bg-warning text-dark";
+            status.innerHTML =
+                '<i class="bi bi-exclamation-triangle"></i> ' +
+                'Unsaved changes — auto-refresh paused';
+
+        } else if (isEditing) {
+            autoRefreshPaused = true;
+
+            status.className = "badge bg-warning text-dark";
+            status.innerHTML =
+                '<i class="bi bi-pause-circle"></i> ' +
+                'Auto-refresh paused (editing)';
+
+        } else {
+            autoRefreshPaused = false;
+
+            status.className = "badge bg-success";
+            status.innerHTML =
+                '<i class="bi bi-arrow-repeat"></i> ' +
+                'Auto-refresh active (60s)';
+        }
+        
+        // Restart the 60-second countdown when editing finishes
+        if (wasPaused && !autoRefreshPaused) {
+            startAutoRefresh();
+        }        
+    }
+
+    // Monitor changes and field focus
+    editableFields.forEach(field => {
+        field.addEventListener("focus", updateRefreshStatus);
+        field.addEventListener("blur", function () {
+            setTimeout(updateRefreshStatus, 0);
+        });
+        field.addEventListener("input", updateRefreshStatus);
+        field.addEventListener("change", updateRefreshStatus);
+    });
+
+    // Initialize the status indicator
+    updateRefreshStatus();
+
+    // Start automatic refreshing when the dashboard loads
+    startAutoRefresh();
+
 </script>
-
-
 
 {% endblock %}

@@ -7,7 +7,16 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from app import db
 
 
+
 class WorkItem(db.Model):
+    __table_args__ = (
+        db.UniqueConstraint(
+            "number",
+            "type",
+            name="uq_work_item_number_type"
+        ),
+    )
+
     id = db.Column(db.Integer, primary_key=True)
 
     number = db.Column(db.String(50), nullable=False)
