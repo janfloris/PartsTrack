@@ -711,6 +711,7 @@ def update_received(part_id):
     )
 
 
+# Edit individual Part details (Part Number, Description, Notes, Quantities)
 @main.route("/part/<int:part_id>/edit", methods=["GET", "POST"])
 def edit_part(part_id):
     part = db.get_or_404(PartLine, part_id)
@@ -766,6 +767,34 @@ def edit_part(part_id):
     return render_template("edit_part.html", part=part)
 
 
+@main.route("/part/<int:part_id>/delete", methods=["POST"])
+def delete_part(part_id):
+    part = db.get_or_404(PartLine, part_id)
+
+    # Remember the Work Item ID before deleting the part
+    work_item_id = part.parts_order.work_item_id
+
+    # Remember the Part Number for the confirmation message
+    part_number = part.part_number
+
+    # Delete only this PartLine
+    db.session.delete(part)
+    db.session.commit()
+
+    flash(
+        f"Part {part_number} deleted successfully!",
+        "success"
+    )
+
+    return redirect(
+        url_for(
+            "main.work_item_details",
+            item_id=work_item_id
+        )
+    )
+
+
+# Edit Supplier Order details (Supplier, Order Number, Notes)
 @main.route("/parts-order/<int:order_id>/edit", methods=["GET", "POST"])
 def edit_parts_order(order_id):
     parts_order = db.get_or_404(PartsOrder, order_id)
