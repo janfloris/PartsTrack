@@ -859,9 +859,9 @@ def update_work_item_dashboard(item_id):
     return redirect(url_for("main.dashboard"))
 
 
-@main.route("/settings/technicians")
+@main.route("/settings/app")
 @login_required
-def technician_settings():
+def app_settings():
     technicians = Technician.query.order_by(
         Technician.name.asc()
     ).all()
@@ -871,7 +871,7 @@ def technician_settings():
     ).all()
 
     return render_template(
-        "technician_settings.html",
+        "app_settings.html",
         technicians=technicians,
         suppliers=suppliers
     )
@@ -897,7 +897,7 @@ def delete_old_notifications():
         )
     except ValueError:
         flash("Please select a valid cutoff date.", "danger")
-        return redirect(url_for("main.technician_settings"))
+        return redirect(url_for("main.app_settings"))
 
     # Notifications are stored using UTC timestamps.
     # Delete anything before midnight UTC on the
@@ -916,7 +916,7 @@ def delete_old_notifications():
         "success"
     )
 
-    return redirect(url_for("main.technician_settings"))
+    return redirect(url_for("main.app_settings"))
 
 
 @main.route("/settings/technicians/add", methods=["POST"])
@@ -925,13 +925,13 @@ def add_technician():
 
     if not name:
         flash("Please enter a technician name.", "warning")
-        return redirect(url_for("main.technician_settings"))
+        return redirect(url_for("main.app_settings"))
 
     existing_technician = Technician.query.filter_by(name=name).first()
 
     if existing_technician:
         flash("This technician already exists.", "warning")
-        return redirect(url_for("main.technician_settings"))
+        return redirect(url_for("main.app_settings"))
 
     technician = Technician(name=name)
 
@@ -940,7 +940,7 @@ def add_technician():
 
     flash(f"Technician '{name}' added successfully.", "success")
 
-    return redirect(url_for("main.technician_settings"))
+    return redirect(url_for("main.app_settings"))
 
 
 @main.route("/settings/technicians/delete/<int:technician_id>", methods=["POST"])
@@ -954,12 +954,12 @@ def delete_technician(technician_id):
 
     flash(f"Technician '{name}' removed from the list.", "success")
 
-    return redirect(url_for("main.technician_settings"))
+    return redirect(url_for("main.app_settings"))
 
 
 @main.route("/settings/suppliers")
 def supplier_settings():
-    return redirect(url_for("main.technician_settings"))
+    return redirect(url_for("main.app_settings"))
 
 
 @main.route("/settings/suppliers/add", methods=["POST"])
