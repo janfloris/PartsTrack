@@ -336,39 +336,44 @@
 
                             <!-- Actions -->
                             <td>
+                                <div class="d-flex gap-2">
 
-                                <!-- Save Form -->
-                                <form id="{{ form_id }}"
-                                    method="POST"
-                                    action="{{ url_for('main.update_work_item_dashboard', item_id=item.id) }}"
-                                    class="mb-2"
-                                    data-receiving-status="{{ item.parts_status }}"
-                                    onsubmit="return confirmAppointmentSave(this);">
+                                    <!-- Save Form -->
+                                    <form id="{{ form_id }}"
+                                          method="POST"
+                                          action="{{ url_for('main.update_work_item_dashboard', item_id=item.id) }}"
+                                          class="flex-fill mb-0"
+                                          data-receiving-status="{{ item.parts_status }}"
+                                          onsubmit="return confirmAppointmentSave(this);">
 
-                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-                                    <button type="submit"
-                                            class="btn btn-sm btn-primary w-100">
-                                        <i class="bi bi-save"></i>
-                                        Save
-                                    </button>
+                                        <button type="submit"
+                                                title="Save Changes"
+                                                araia-label="Save Changes"
+                                                class="btn btn-sm btn-outline-primary w-100">
+                                            <i class="bi bi-save"></i>
+                                        </button>
 
-                                </form>
+                                    </form>
 
-                                <!-- Archive Form -->
-                                <form method="POST"
-                                      action="{{ url_for('main.archive_work_item', item_id=item.id) }}"
-                                      onsubmit="return confirm('Archive this Work Item?');">
+                                    <!-- Archive Form -->
+                                    <form method="POST"
+                                          action="{{ url_for('main.archive_work_item', item_id=item.id) }}"
+                                          class="flex-fill mb-0"
+                                          onsubmit="return confirm('Archive this Work Item?');">
 
-                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-                                    <button type="submit"
-                                            class="btn btn-sm btn-outline-secondary w-100">
-                                        <i class="bi bi-archive"></i>
-                                        Archive
-                                    </button>
+                                        <button type="submit"
+                                                title="Archive Work Item"
+                                                aria-label="Archive Work Item"
+                                                class="btn btn-sm btn-outline-warning">
+                                            <i class="bi bi-archive"></i>
+                                        </button>
 
-                                </form>
+                                    </form>
+                                </div>
 
                             </td>
 
@@ -412,6 +417,10 @@
 
         // No Appointment Date selected - save normally
         if (!appointmentDateField || !appointmentDateField.value) {
+
+            // Allow the form to submit without an unsaved changes warning
+            allowPageExit = true;
+
             return true;
         }
 
