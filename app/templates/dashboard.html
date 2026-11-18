@@ -60,13 +60,15 @@
     <div class="card shadow-sm mb-4">
         <div class="card-body">
 
-            <form method="GET" action="{{ url_for('main.dashboard') }}">
+            <form method="GET"
+                    action="{{ url_for('main.dashboard') }}"
+                    onsubmit="resetStatusFiltersForSearch()">
 
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
                 <div class="row g-3 align-items-end">
 
-                    <div class="col-md-6">
+                    <div class="col-md-10">
                         <label for="search" class="form-label">
                             Search Work Items
                         </label>
@@ -79,52 +81,26 @@
                                value="{{ search_query }}">
                     </div>
 
-                    <div class="col-md-4">
-                        <label for="status" class="form-label">
-                            Receiving Status
-                        </label>
-
-                        <select class="form-select"
-                                id="status"
-                                name="status">
-
-                            <option value="">All Statuses</option>
-
-                            <option value="Red"
-                                {% if status_filter == "Red" %}selected{% endif %}>
-                                Not Received
-                            </option>
-
-                            <option value="Yellow"
-                                {% if status_filter == "Yellow" %}selected{% endif %}>
-                                Partially Received
-                            </option>
-
-                            <option value="Green"
-                                {% if status_filter == "Green" %}selected{% endif %}>
-                                Fully Received
-                            </option>
-
-                            <option value="Blue"
-                                {% if status_filter == "Blue" %}selected{% endif %}>
-                                Booked
-                            </option>
-
-                        </select>
-                    </div>
-
                     <div class="col-md-2">
 
-                        <button type="submit"
-                                class="btn btn-primary w-100 mb-2">
-                            <i class="bi bi-search"></i>
-                            Search
-                        </button>
+                        <div class="d-flex gap-2">
 
-                        <a href="{{ url_for('main.dashboard') }}"
-                           class="btn btn-outline-secondary w-100">
-                            Clear
-                        </a>
+                            <!-- Search Button -->
+                            <button type="submit"
+                                    class="btn btn-sm btn-primary w-50">
+                                <i class="bi bi-search"></i>
+                                Search
+                            </button>
+
+                            <!-- Clear Button -->
+                            <a href="{{ url_for('main.dashboard') }}"
+                            class="btn btn-sm btn-outline-secondary w-50"
+                            onclick="resetStatusFiltersForSearch()">
+                                <i class="bi bi-x-circle"></i>
+                                Clear
+                            </a>
+
+                        </div>
 
                     </div>
 
@@ -159,51 +135,91 @@
     <!-- Dashboard Counters -->
     <div class="row mb-4">
 
-        <!-- Active Work Items -->
+        <!-- Active Work Items / Select All -->
         <div class="col-md">
             <div class="card shadow-sm">
                 <div class="card-body">
-                    <h6 class="text-muted">Active Work Items</h6>
+                    <div class="d-flex justify-content-between align-items-start">
+                        <h6 class="text-muted">Active Work Items</h6>
+                        <input type="checkbox"
+                               class="form-check-input status-filter-all"
+                               id="selectAllStatuses"
+                               checked
+                               title="Select All Statuses"
+                               aria-label="Select All Statuses">
+                    </div>
                     <h3>{{ total_items }}</h3>
                 </div>
             </div>
         </div>
 
-        <!-- Fully Received Work Items -->
+        <!-- Fully Received -->
         <div class="col-md">
             <div class="card shadow-sm border-success">
                 <div class="card-body">
-                    <h6 class="text-muted">All Parts Received</h6>
+                    <div class="d-flex justify-content-between align-items-start">
+                        <h6 class="text-muted">All Parts Received</h6>
+                        <input type="checkbox"
+                               class="form-check-input status-filter"
+                               value="Green"
+                               checked
+                               title="Show Fully Received"
+                               aria-label="Show Fully Received">
+                    </div>
                     <h3 class="text-success">{{ green_count }}</h3>
                 </div>
             </div>
         </div>
 
-        <!-- Partially Received Work Items -->
+        <!-- Partially Received -->
         <div class="col-md">
             <div class="card shadow-sm border-warning">
                 <div class="card-body">
-                    <h6 class="text-muted">Partially Received</h6>
+                    <div class="d-flex justify-content-between align-items-start">
+                        <h6 class="text-muted">Partially Received</h6>
+                        <input type="checkbox"
+                               class="form-check-input status-filter"
+                               value="Yellow"
+                               checked
+                               title="Show Partially Received"
+                               aria-label="Show Partially Received">
+                    </div>
                     <h3 class="text-warning">{{ yellow_count }}</h3>
                 </div>
             </div>
         </div>
 
-        <!-- Nothing Received Work Items -->
+        <!-- Nothing Received -->
         <div class="col-md">
             <div class="card shadow-sm border-danger">
                 <div class="card-body">
-                    <h6 class="text-muted">Nothing Received</h6>
+                    <div class="d-flex justify-content-between align-items-start">
+                        <h6 class="text-muted">Nothing Received</h6>
+                        <input type="checkbox"
+                               class="form-check-input status-filter"
+                               value="Red"
+                               checked
+                               title="Show Nothing Received"
+                               aria-label="Show Nothing Received">
+                    </div>
                     <h3 class="text-danger">{{ red_count }}</h3>
                 </div>
             </div>
         </div>
 
-        <!-- Booked Work Items -->
+        <!-- Booked -->
         <div class="col-md">
             <div class="card shadow-sm border-primary">
                 <div class="card-body">
-                    <h6 class="text-muted">Booked</h6>
+                    <div class="d-flex justify-content-between align-items-start">
+                        <h6 class="text-muted">Booked</h6>
+                        <input type="checkbox"
+                               class="form-check-input status-filter"
+                               value="Blue"
+                               checked
+                               title="Show Booked"
+                               aria-label="Show Booked">
+                    </div>
                     <h3 class="text-primary">{{ booked_count }}</h3>
                 </div>
             </div>
@@ -222,13 +238,13 @@
                     <thead class="table-light">
                         <tr>
                             <th>Work Item #</th>
-                            <th>Created</th>                            
+                            <th>Created</th>
                             <th>Type</th>
                             <th>Customer</th>
                             <th>Technician</th>
                             <th>Notes</th>
                             <th>Appointment Date</th>
-                            <th>Receiving Status</th>                            
+                            <th>Receiving Status</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -239,7 +255,8 @@
 
                         {% set form_id = "edit_work_item_" ~ item.id %}
 
-                        <tr>
+                        <tr class="work-item-row"
+                            data-status="{{ item.receiving_status }}">
 
                             <!-- Work Item Number -->
                             <td>
@@ -301,7 +318,7 @@
                                        form="{{ form_id }}"
                                        value="{{ item.appointment_date.strftime('%Y-%m-%d') if item.appointment_date else '' }}"
                                        style="min-width: 150px;">
-                            </td>                            
+                            </td>
 
                             <!-- Receiving Status -->
                             <td>
@@ -350,7 +367,7 @@
 
                                         <button type="submit"
                                                 title="Save Changes"
-                                                araia-label="Save Changes"
+                                                aria-label="Save Changes"
                                                 class="btn btn-sm btn-outline-primary w-100">
                                             <i class="bi bi-save"></i>
                                         </button>
@@ -410,7 +427,7 @@
         // Find the Appointment Date field for this Work Item
         const appointmentDateField = document.querySelector(
             'input[name="appointment_date"][form="' + form.id + '"]'
-        )
+        );
         const technicianField = document.querySelector(
             'select[name="technician"][form="' + form.id + '"]'
         );
@@ -520,17 +537,17 @@
             refreshDashboard();
         });
 
-        // Warn before leaving the dashboard with unsaved changes
-        let allowPageExit = false;
+    // Warn before leaving the dashboard with unsaved changes
+    let allowPageExit = false;
 
-        window.addEventListener("beforeunload", function (event) {
+    window.addEventListener("beforeunload", function (event) {
 
-            if (hasUnsavedChanges() && !allowPageExit) {
-                event.preventDefault();
-                event.returnValue = "";
-            }
+        if (hasUnsavedChanges() && !allowPageExit) {
+            event.preventDefault();
+            event.returnValue = "";
+        }
 
-        });
+    });
 
     // Track dashboard editing and unsaved changes
     const editableFields = Array.from(
@@ -588,11 +605,11 @@
                 '<i class="bi bi-arrow-repeat"></i> ' +
                 'Auto-refresh active (60s)';
         }
-        
+
         // Restart the 60-second countdown when editing finishes
         if (wasPaused && !autoRefreshPaused) {
             startAutoRefresh();
-        }        
+        }
     }
 
     // Monitor changes and field focus
@@ -610,6 +627,123 @@
 
     // Start automatic refreshing when the dashboard loads
     startAutoRefresh();
+
+
+    // Dashboard status checkbox filtering
+    const statusCheckboxes = document.querySelectorAll(".status-filter");
+    const selectAllStatuses = document.getElementById("selectAllStatuses");
+    const workItemRows = document.querySelectorAll(".work-item-row");
+
+    // Browser storage key
+    const STATUS_STORAGE_KEY = "partstrack_status_filters";
+
+    // Reset status filters when performing a new search
+    function resetStatusFiltersForSearch() {
+
+        // Select all four status checkboxes
+        statusCheckboxes.forEach(checkbox => {
+            checkbox.checked = true;
+        });
+
+        // Update the Select All checkbox
+        selectAllStatuses.checked = true;
+        selectAllStatuses.indeterminate = false;
+
+        // Save the new selections for the next page load
+        saveStatusFilters();
+    }    
+
+    // Save selected statuses to browser storage
+    function saveStatusFilters() {
+
+        const selectedStatuses = Array.from(statusCheckboxes)
+            .filter(checkbox => checkbox.checked)
+            .map(checkbox => checkbox.value);
+
+        localStorage.setItem(
+            STATUS_STORAGE_KEY,
+            JSON.stringify(selectedStatuses)
+        );
+    }
+
+    // Restore previously selected statuses
+    function restoreStatusFilters() {
+
+        const savedFilters = localStorage.getItem(STATUS_STORAGE_KEY);
+
+        // First visit: all statuses remain checked
+        if (savedFilters === null) {
+            return;
+        }
+
+        try {
+            const selectedStatuses = JSON.parse(savedFilters);
+
+            if (!Array.isArray(selectedStatuses)) {
+                return;
+            }
+
+            statusCheckboxes.forEach(checkbox => {
+                checkbox.checked = selectedStatuses.includes(checkbox.value);
+            });
+
+        } catch (error) {
+            console.warn("Could not restore status filters:", error);
+        }
+    }
+
+    // Show or hide Work Items based on selected statuses
+    function filterWorkItems() {
+
+        const selectedStatuses = Array.from(statusCheckboxes)
+            .filter(checkbox => checkbox.checked)
+            .map(checkbox => checkbox.value);
+
+        workItemRows.forEach(row => {
+
+            const status = row.dataset.status;
+
+            row.style.display =
+                selectedStatuses.includes(status) ? "" : "none";
+        });
+
+        // Update Select All checkbox
+        const checkedCount = selectedStatuses.length;
+
+        selectAllStatuses.checked =
+            checkedCount === statusCheckboxes.length;
+
+        selectAllStatuses.indeterminate =
+            checkedCount > 0 && checkedCount < statusCheckboxes.length;
+    }
+
+    // Individual status checkboxes
+    statusCheckboxes.forEach(checkbox => {
+
+        checkbox.addEventListener("change", function () {
+            filterWorkItems();
+            saveStatusFilters();
+        });
+
+    });
+
+    // Select All checkbox
+    selectAllStatuses.addEventListener("change", function () {
+
+        statusCheckboxes.forEach(checkbox => {
+            checkbox.checked = selectAllStatuses.checked;
+        });
+
+        filterWorkItems();
+        saveStatusFilters();
+    });
+
+    // Restore saved selections when the dashboard loads
+    restoreStatusFilters();
+
+    // Apply the restored filters
+    filterWorkItems();
+
 
 </script>
 
