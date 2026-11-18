@@ -141,9 +141,8 @@ def dashboard():
         else:
             red_count += 1
 
-    # Get search and status filter values
+    # Get search value
     search_query = request.args.get("search", "").strip().lower()
-    status_filter = request.args.get("status", "").strip()
 
     # Filter Work Items by search text
     filtered_items = work_items
@@ -155,13 +154,6 @@ def dashboard():
             or search_query in (item.customer or "").lower()
             or search_query in (item.technician or "").lower()
             or search_query in (item.type or "").lower()
-        ]
-
-    # Filter Work Items by status
-    if status_filter in ["Red", "Yellow", "Green", "Blue"]:
-        filtered_items = [
-            item for item in filtered_items
-            if item.receiving_status == status_filter
         ]
 
     technicians = Technician.query.order_by(
@@ -177,7 +169,6 @@ def dashboard():
         red_count=red_count,
         booked_count=booked_count,
         search_query=search_query,
-        status_filter=status_filter,
         technicians=technicians
     )
 
