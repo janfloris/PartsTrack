@@ -47,6 +47,7 @@
                     <input type="text"
                            name="number"
                            class="form-control"
+                           value="{{ request.args.get('number', '') }}"
                            required>
                 </div>
 
@@ -56,12 +57,20 @@
                     <select name="type"
                             class="form-select"
                             required>
+
                         <option value="">Select Type</option>
-                        <option value="Work Order">Work Order</option>
-                        <option value="Estimate">Estimate</option>
-                        <option value="Invoice">Invoice</option>
-                        <option value="Quote">Quote</option>
+
+                        {% for item_type in ["Work Order", "Estimate", "Invoice", "Quote"] %}
+
+                            <option value="{{ item_type }}"
+                                    {% if request.args.get('type') == item_type %}selected{% endif %}>
+                                {{ item_type }}
+                            </option>
+
+                        {% endfor %}
+
                     </select>
+
                 </div>
 
                 <div class="mb-3">

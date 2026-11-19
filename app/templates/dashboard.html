@@ -28,11 +28,15 @@
                 Archive
             </a>
 
-            <a href="{{ url_for('main.new_work_item') }}"
-               class="btn btn-primary">
+            <button type="button"
+                    class="btn btn-primary"
+                    data-bs-toggle="modal"
+                    data-bs-target="#checkWorkItemModal">
+
                 <i class="bi bi-plus-circle"></i>
                 New Work Item
-            </a>
+
+            </button>
 
         </div>
     </div>
@@ -421,6 +425,107 @@
 
 </div>
 
+
+<!-- Check Work Item Modal -->
+<div class="modal fade"
+     id="checkWorkItemModal"
+     tabindex="-1"
+     aria-labelledby="checkWorkItemModalLabel"
+     aria-hidden="true">
+
+    <div class="modal-dialog modal-dialog-centered">
+
+        <div class="modal-content">
+
+            <div class="modal-header">
+                <h5 class="modal-title"
+                    id="checkWorkItemModalLabel">
+                    New Work Item
+                </h5>
+
+                <button type="button"
+                        class="btn-close"
+                        data-bs-dismiss="modal"
+                        aria-label="Close">
+                </button>
+            </div>
+
+            <div class="modal-body">
+
+                <p class="text-muted">
+                    Enter the Work Item Number and Type.
+                </p>
+
+                <form id="checkWorkItemForm">
+
+                    <div class="mb-3">
+                        <label for="checkWorkItemNumber"
+                               class="form-label">
+                            Work Item Number *
+                        </label>
+
+                        <input type="text"
+                               id="checkWorkItemNumber"
+                               name="number"
+                               class="form-control"
+                               required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="checkWorkItemType"
+                               class="form-label">
+                            Work Item Type *
+                        </label>
+
+                        <select id="checkWorkItemType"
+                                name="type"
+                                class="form-select"
+                                required>
+
+                            <option value="">Select Type</option>
+                            <option value="Work Order">Work Order</option>
+                            <option value="Estimate">Estimate</option>
+                            <option value="Invoice">Invoice</option>
+                            <option value="Quote">Quote</option>
+
+                        </select>
+                    </div>
+
+                    <!-- Check Result -->
+                    <div id="checkWorkItemResult"
+                         class="d-none"
+                         aria-live="polite">
+                    </div>
+
+                    <div class="d-flex justify-content-end gap-2">
+
+                        <button type="button"
+                                class="btn btn-outline-secondary"
+                                data-bs-dismiss="modal">
+                            Cancel
+                        </button>
+
+                        <button type="submit"
+                                id="checkWorkItemButton"
+                                class="btn btn-primary">
+
+                            <i class="bi bi-search"></i>
+                            Check Work Item
+
+                        </button>
+
+                    </div>
+
+                </form>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
 <script>
     function confirmAppointmentSave(form) {
 
@@ -503,7 +608,7 @@
             updateRefreshStatus();
 
             // Never refresh while editing or with unsaved changes
-            if (autoRefreshPaused) {
+            if (autoRefreshPaused || checkModalOpen) {
                 return;
             }
 
@@ -744,6 +849,131 @@
     // Apply the restored filters
     filterWorkItems();
 
+    // Check for existing Work Items
+    const checkWorkItemModal = document.getElementById("checkWorkItemModal");
+    const checkWorkItemForm = document.getElementById("checkWorkItemForm");
+    const checkWorkItemResult = document.getElementById("checkWorkItemResult");
+    const checkWorkItemButton = document.getElementById("checkWorkItemButton");
+    const checkWorkItemNumber = document.getElementById("checkWorkItemNumber");
+    const checkWorkItemType = document.getElementById("checkWorkItemType");
+
+    // Prevent auto-refresh while the modal is open
+    let checkModalOpen = false;
+
+    checkWorkItemModal.addEventListener("shown.bs.modal", function () {
+        checkModalOpen = true;
+        checkWorkItemNumber.focus();
+    });
+
+    checkWorkItemModal.addEventListener("hide.bs.modal", function () {
+        checkModalOpen = false;
+    });
+
+    // Clear previous results when the user changes either field
+    function clearCheckWorkItemResult() {
+        checkWorkItemResult.className = "d-none";
+        checkWorkItemResult.innerHTML = "";
+    }
+
+    checkWorkItemNumber.addEventListener("input", clearCheckWorkItemResult);
+    checkWorkItemType.addEventListener("change", clearCheckWorkItemResult);
+
+    // Check the database when the form is submitted
+    checkWorkItemForm.addEventListener("submit", async function (event) {
+        event.preventDefault();
+
+        const number = checkWorkItemNumber.value.trim();
+        const type = checkWorkItemType.value;
+
+        if (!number || !type) {
+            return;
+        }
+
+        clearCheckWorkItemResult();
+
+        checkWorkItemButton.disabled = true;
+        checkWorkItemButton.innerHTML =
+            '<span class="spinner-border spinner-border-sm"></span> Checking...';
+
+        const formData = new FormData();
+        formData.append("number", number);
+        formData.append("type", type);
+        formData.append(
+            "csrf_token",
+            document.querySelector('input[name="csrf_token"]').value
+        );
+
+        try {
+            const response = await fetch(
+                "{{ url_for('main.check_work_item') }}",
+                {
+                    method: "POST",
+                    body: formData
+                }
+            );
+
+            const data = await response.json();
+
+            if (!response.ok || !data.success) {
+                throw new Error(data.message || "Unable to check Work Item.");
+            }
+
+            checkWorkItemResult.className = "alert mt-3";
+
+            if (data.exists) {
+                const item = data.work_item;
+
+                checkWorkItemResult.classList.add("alert-warning");
+
+                const heading = document.createElement("strong");
+                heading.textContent = "Work Item Already Exists";
+
+                const details = document.createElement("p");
+                details.className = "mb-2";
+                details.textContent =
+                    `${item.number} (${item.type}) — ${item.customer}`;
+
+                const archived = document.createElement("p");
+                archived.className = "mb-2";
+                archived.textContent = item.is_archived
+                    ? "This Work Item is archived."
+                    : "This Work Item is active.";
+
+                const openButton = document.createElement("a");
+                openButton.href = item.url;
+                openButton.className = "btn btn-warning btn-sm";
+                openButton.textContent = "Open Existing Work Item";
+
+                checkWorkItemResult.append(
+                    heading, details, archived, openButton
+                );
+
+            } else {
+                checkWorkItemResult.classList.add("alert-success");
+
+                const message = document.createElement("p");
+                message.className = "mb-2";
+                message.textContent =
+                    "No matching Work Item found. You can create a new one.";
+
+                const createButton = document.createElement("a");
+                createButton.href = data.new_work_item_url;
+                createButton.className = "btn btn-success btn-sm";
+                createButton.textContent = "Create New Work Item";
+
+                checkWorkItemResult.append(message, createButton);
+            }
+
+        } catch (error) {
+            checkWorkItemResult.className = "alert alert-danger mt-3";
+            checkWorkItemResult.textContent = error.message;
+
+        } finally {
+            checkWorkItemButton.disabled = false;
+            checkWorkItemButton.innerHTML =
+                '<i class="bi bi-search"></i> Check Work Item';
+        }
+    });
 
 </script>
 
