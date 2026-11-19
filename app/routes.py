@@ -6,7 +6,8 @@ from flask import (
     url_for,
     request,
     flash,
-    abort
+    abort,
+    jsonify
 )
 from sqlalchemy.exc import IntegrityError
 from app import db
@@ -207,6 +208,54 @@ def work_item_details(item_id):
         status=status,
         suppliers=suppliers
     )
+
+
+@main.route("/check-work-item", methods=["POST"])
+def check_work_item():
+
+    number = request.form.get("number", "").strip()
+    item_type = request.form.get("type", "").strip()
+
+    # Validate required fields
+    if not number or not item_type:
+        return jsonify({
+            "success": False,
+            "message": "Work Item Number and Type are required."
+        }), 400
+
+    # Check both active and archived Work Items
+    existing_work_item = WorkItem.query.filter_by(
+        number=number,
+        type=item_type
+    ).first()
+
+    if existing_work_item:
+        return jsonify({
+            "success": True,
+            "exists": True,
+            "work_item": {
+                "id": existing_work_item.id,
+                "number": existing_work_item.number,
+                "type": existing_work_item.type,
+                "customer": existing_work_item.customer,
+                "is_archived": existing_work_item.is_archived,
+                "url": url_for(
+                    "main.work_item_details",
+                    item_id=existing_work_item.id
+                )
+            }
+        })
+
+    return jsonify({
+        "success": True,
+        "exists": False,
+        "new_work_item_url": url_for(
+            "main.new_work_item",
+            number=number,
+            type=item_type
+        )
+    })
+
 
 @main.route("/new-work-item", methods=["GET", "POST"])
 def new_work_item():
