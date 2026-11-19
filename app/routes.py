@@ -55,7 +55,6 @@ def require_login():
         return redirect(url_for("main.login"))
 
 
-
 @main.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
@@ -454,6 +453,75 @@ def new_work_item():
         suppliers=suppliers
     )
 
+
+@main.route("/work-item/<int:item_id>/update-details", methods=["POST"])
+def update_work_item_details(item_id):
+
+    work_item = db.get_or_404(WorkItem, item_id)
+
+    # Get updated values from the Edit Work Item modal
+    number = request.form.get("number", "").strip()
+    item_type = request.form.get("type", "").strip()
+    customer = request.form.get("customer", "").strip()
+
+    # Validate required fields
+    if not number or not item_type or not customer:
+        flash(
+            "Work Item Number, Type, and Customer are required.",
+            "danger"
+        )
+        return redirect(
+            url_for("main.work_item_details", item_id=item_id)
+        )
+
+    # Check for another Work Item with the same Number and Type
+    existing_work_item = WorkItem.query.filter(
+        WorkItem.number == number,
+        WorkItem.type == item_type,
+        WorkItem.id != item_id
+    ).first()
+
+    if existing_work_item:
+        flash(
+            f"Work Item {number} ({item_type}) already exists. "
+            "Please use a different Work Item Number or Type.",
+            "danger"
+        )
+        return redirect(
+            url_for("main.work_item_details", item_id=item_id)
+        )
+
+    # Update only the three editable fields
+    work_item.number = number
+    work_item.type = item_type
+    work_item.customer = customer
+
+    try:
+        db.session.commit()
+
+    except IntegrityError:
+        db.session.rollback()
+
+        flash(
+            "Unable to save changes. Another Work Item "
+            "already uses this Number and Type.",
+            "danger"
+        )
+
+        return redirect(
+            url_for("main.work_item_details", item_id=item_id)
+        )
+
+    flash(
+        "Work Item details updated successfully!",
+        "success"
+    )
+
+    return redirect(
+        url_for("main.work_item_details", item_id=item_id)
+    )
+
+
 @main.route("/work-item/<int:item_id>/add-order", methods=["POST"])
 def add_parts_order(item_id):
     work_item = db.get_or_404(WorkItem, item_id)
@@ -516,6 +584,7 @@ def add_parts_order(item_id):
 
     return render_template("new_work_item.html")
 
+
 @main.route("/archive/<int:item_id>", methods=["POST"])
 def archive_work_item(item_id):
     work_item = db.session.get(WorkItem, item_id)
@@ -527,8 +596,67 @@ def archive_work_item(item_id):
 
     return redirect(url_for("main.dashboard"))
 
+
+@main.route("/archive-past-booked-items", methods=["POST"])
+def archive_past_booked_items():
+
+    from datetime import date, datetime
+
+    cutoff_date_str = request.form.get(
+        "archive_cutoff_date", ""
+    ).strip()
+
+    try:
+        cutoff_date = datetime.strptime(
+            cutoff_date_str, "%Y-%m-%d"
+        ).date()
+
+    except ValueError:
+        flash("Please select a valid archive date.", "danger")
+        return redirect(url_for("main.archived_work_items"))
+
+    # Do not allow today or future dates
+    if cutoff_date >= date.today():
+        flash(
+            "The archive cutoff date must be before today.",
+            "danger"
+        )
+        return redirect(url_for("main.archived_work_items"))
+
+    # Find active Work Items booked on or before cutoff
+    work_items = WorkItem.query.filter(
+        WorkItem.is_archived.is_(False),
+        WorkItem.appointment_date.isnot(None),
+        WorkItem.appointment_date <= cutoff_date
+    ).all()
+
+    archived_count = len(work_items)
+
+    if archived_count == 0:
+        flash(
+            "No Work Items found with a Booked In Date "
+            "on or before the selected date.",
+            "info"
+        )
+    else:
+        for item in work_items:
+            item.is_archived = True
+
+        db.session.commit()
+
+        flash(
+            f"{archived_count} Work Item(s) archived successfully!",
+            "success"
+        )
+
+    return redirect(url_for("main.archived_work_items"))
+
+
 @main.route("/archive")
 def archived_work_items():
+    from datetime import date, timedelta
+
+    yesterday = date.today() - timedelta(days=1)    
     work_items = (
         WorkItem.query
         .filter_by(is_archived=True)
@@ -537,9 +665,11 @@ def archived_work_items():
     )
 
     return render_template(
-        "archive.html",
-        work_items=work_items
+        "archive.html",        
+        work_items=work_items,
+        yesterday=yesterday.isoformat()
     )
+
 
 @main.route("/restore/<int:item_id>", methods=["POST"])
 def restore_work_item(item_id):
@@ -552,6 +682,7 @@ def restore_work_item(item_id):
         flash("Work Item restored successfully.", "success")
 
     return redirect(url_for("main.archived_work_items"))
+
 
 @main.route("/archive/delete-old", methods=["POST"])
 def delete_old_archived_items():
@@ -596,6 +727,7 @@ def delete_old_archived_items():
     )
 
     return redirect(url_for("main.archived_work_items"))
+
 
 @main.route("/parts-order/<int:order_id>/add-part", methods=["POST"])
 def add_part(order_id):
@@ -1238,7 +1370,6 @@ def mark_notification_read(notification_id):
     return redirect(url_for("main.notifications"))
 
 
-
 @main.route("/notifications/<int:notification_id>/dismiss", methods=["POST"])
 @login_required
 def dismiss_notification(notification_id):
@@ -1266,7 +1397,6 @@ def dismiss_notification(notification_id):
 
     # Normal form submission fallback.
     return redirect(url_for("main.notifications"))
-
 
 
 @main.route("/notifications/<int:notification_id>/open", methods=["POST"])
