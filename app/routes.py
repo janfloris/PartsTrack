@@ -1,6 +1,10 @@
+import csv
+import io
+from collections import defaultdict
 
 from flask import (
     Blueprint,
+    current_app,
     render_template,
     redirect,
     url_for,
@@ -20,7 +24,6 @@ from flask_login import (
 from app.models import WorkItem, PartsOrder, PartLine, Technician, Supplier, User, Notification 
 from datetime import date, datetime
 from functools import wraps
-from flask import abort, jsonify
 
 main = Blueprint("main", __name__)
 
@@ -1496,3 +1499,308 @@ def check_notifications():
             for notification in unread_notifications
         ]
     })
+
+
+@main.route("/import-pbs-orders", methods=["POST"])
+@login_required
+def import_pbs_orders():
+    uploaded_file = request.files.get("csv_file")
+
+    if not uploaded_file or not uploaded_file.filename:
+        flash("Please select a PBS Order CSV file.", "danger")
+        return redirect(url_for("main.dashboard"))
+
+    if not uploaded_file.filename.lower().endswith(".csv"):
+        flash("Only CSV files are supported.", "danger")
+        return redirect(url_for("main.dashboard"))
+
+    try:
+        # Limit uploads to 10 MB.
+        file_bytes = uploaded_file.stream.read(10 * 1024 * 1024 + 1)
+
+        if len(file_bytes) > 10 * 1024 * 1024:
+            raise ValueError("CSV file exceeds the 10 MB limit.")
+
+        try:
+            csv_text = file_bytes.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            csv_text = file_bytes.decode("cp1252")
+
+        rows = list(csv.reader(io.StringIO(csv_text)))
+
+        if len(rows) < 5:
+            raise ValueError("The CSV does not contain enough rows.")
+
+        # Line 2 contains the PBS Order Number.
+        order_header = rows[1][0].strip()
+
+        if not order_header.lower().startswith("order #"):
+            raise ValueError("PBS Order Number not found on line 2.")
+
+        order_number = order_header.split("#", 1)[1].strip()
+
+        if not order_number:
+            raise ValueError("PBS Order Number is empty.")
+
+        # Line 4 contains the column headings.
+        headings = [
+            heading.strip().lower()
+            for heading in rows[3]
+        ]
+
+        required_columns = [
+            "reference",
+            "part number",
+            "description",
+            "customer name",
+            "source",
+            "qty"
+        ]
+
+        for column in required_columns:
+            if column not in headings:
+                raise ValueError(
+                    f"Required CSV column is missing: {column}"
+                )
+
+        columns = {
+            name: headings.index(name)
+            for name in required_columns
+        }
+
+
+        # Combine customer names that PBS splits across rows.
+        customer_column = columns["customer name"]
+        reference_column = columns["reference"]
+        part_column = columns["part number"]
+
+        cleaned_rows = []
+        previous_part_row = None
+
+        for line_number, row in enumerate(rows[4:], start=5):
+            nonempty_columns = [
+                index
+                for index, value in enumerate(row)
+                if value.strip()
+            ]
+
+            # A customer continuation row has text only
+            # in the Customer Name column.
+            is_customer_continuation = (
+                nonempty_columns == [customer_column]
+            )
+
+            if is_customer_continuation:
+                if previous_part_row is None:
+                    raise ValueError(
+                        f"Line {line_number}: Customer name "
+                        "continuation has no preceding part."
+                    )
+
+                additional_name = row[customer_column].strip()
+
+                previous_part_row[customer_column] += (
+                    " " + additional_name
+                )
+
+                continue
+
+            cleaned_rows.append(row)
+
+            # Only a valid-looking part row can receive
+            # a customer name continuation.
+            if (
+                len(row) > max(reference_column, part_column)
+                and row[reference_column].strip()
+                and row[part_column].strip()
+            ):
+                previous_part_row = row
+            else:
+                previous_part_row = None
+
+        # Replace the original data rows with cleaned rows.
+        rows = rows[:4] + cleaned_rows
+
+        # Group parts by Work Item Type, Number and Supplier.
+        grouped_orders = defaultdict(list)
+        customers = {}
+
+        for line_number, row in enumerate(rows[4:], start=5):
+            # Ignore blank lines and the report totals line.
+            if not any(cell.strip() for cell in row):
+                continue
+
+            if not row[columns["reference"]].strip():
+                continue
+
+            def field(name):
+                index = columns[name]
+                return row[index].strip() if index < len(row) else ""
+
+            reference = field("reference")
+            part_number = field("part number")
+            description = field("description")
+            customer = field("customer name")
+            supplier = field("source")
+            quantity_text = field("qty")
+
+            if "#" not in reference:
+                raise ValueError(
+                    f"Line {line_number}: Invalid Reference: {reference}"
+                )
+
+            item_type, item_number = [
+                value.strip()
+                for value in reference.split("#", 1)
+            ]
+
+            valid_types = {
+                "work order": "Work Order",
+                "estimate": "Estimate",
+                "invoice": "Invoice",
+                "quote": "Quote"
+            }
+
+            item_type = valid_types.get(item_type.lower())
+
+            if not item_type or not item_number:
+                raise ValueError(
+                    f"Line {line_number}: Invalid Work Item Reference."
+                )
+
+            if not all([
+                part_number,
+                description,
+                customer,
+                supplier,
+                quantity_text
+            ]):
+                raise ValueError(
+                    f"Line {line_number}: Required part information is missing."
+                )
+
+            try:
+                quantity_value = float(quantity_text)
+
+                if (
+                    not quantity_value.is_integer()
+                    or quantity_value <= 0
+                ):
+                    raise ValueError()
+
+                quantity = int(quantity_value)
+
+            except ValueError:
+                raise ValueError(
+                    f"Line {line_number}: Invalid quantity: {quantity_text}"
+                )
+
+            key = (item_type, item_number, supplier)
+
+            # A Work Item should have a consistent customer.
+            customer_key = (item_type, item_number)
+
+            if (
+                customer_key in customers
+                and customers[customer_key] != customer
+            ):
+                raise ValueError(
+                    f"Line {line_number}: Conflicting customer names "
+                    f"for {item_type} #{item_number}."
+                )
+
+            customers[customer_key] = customer
+
+            grouped_orders[key].append({
+                "part_number": part_number,
+                "description": description,
+                "quantity_ordered": quantity
+            })
+
+        if not grouped_orders:
+            raise ValueError("No parts were found in the CSV.")
+
+        created_items = 0
+        created_orders = 0
+        created_parts = 0
+        skipped_orders = 0
+
+        # Validate first, then save everything together.
+        for (item_type, item_number, supplier), parts in grouped_orders.items():
+
+            work_item = WorkItem.query.filter_by(
+                number=item_number,
+                type=item_type
+            ).first()
+
+            if work_item:
+                existing_order = PartsOrder.query.filter_by(
+                    work_item_id=work_item.id,
+                    supplier=supplier,
+                    order_number=order_number
+                ).first()
+
+                if existing_order:
+                    skipped_orders += 1
+                    continue
+
+            else:
+                work_item = WorkItem(
+                    number=item_number,
+                    type=item_type,
+                    customer=customers[(item_type, item_number)],
+                    technician=None,
+                    notes=""
+                )
+
+                db.session.add(work_item)
+                db.session.flush()
+                created_items += 1
+
+            parts_order = PartsOrder(
+                work_item=work_item,
+                supplier=supplier,
+                order_number=order_number,
+                notes=""
+            )
+
+            db.session.add(parts_order)
+            created_orders += 1
+
+            for part_data in parts:
+                part = PartLine(
+                    parts_order=parts_order,
+                    part_number=part_data["part_number"],
+                    description=part_data["description"],
+                    quantity_ordered=part_data["quantity_ordered"],
+                    quantity_received=0,
+                    notes=""
+                )
+
+                db.session.add(part)
+                created_parts += 1
+
+        db.session.commit()
+
+        flash(
+            f"PBS Order #{order_number} processed successfully. "
+            f"New Work Items: {created_items}, "
+            f"Supplier Orders: {created_orders}, "
+            f"Parts: {created_parts}, "
+            f"Skipped existing orders: {skipped_orders}.",
+            "success"
+        )
+
+    except (ValueError, csv.Error) as error:
+        db.session.rollback()
+        flash(f"PBS import failed: {error}", "danger")
+
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("PBS Order Import failed")
+        flash(
+            "An unexpected error occurred while importing the PBS order.",
+            "danger"
+        )
+
+    return redirect(url_for("main.dashboard"))

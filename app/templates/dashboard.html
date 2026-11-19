@@ -28,6 +28,15 @@
                 Archive
             </a>
 
+            <button
+                type="button"
+                class="btn btn-outline-primary"
+                data-bs-toggle="modal"
+                data-bs-target="#importPBSOrderModal"
+            >
+                <i class="bi bi-upload"></i> Import PBS Order
+            </button>
+
             <button type="button"
                     class="btn btn-primary"
                     data-bs-toggle="modal"
@@ -656,6 +665,81 @@
 
     </div>
 
+</div>
+
+<!-- Import PBS Order Modal -->
+<div class="modal fade" id="importPBSOrderModal" tabindex="-1"
+     aria-labelledby="importPBSOrderModalLabel" aria-hidden="true">
+
+    <div class="modal-dialog">
+        <div class="modal-content">
+
+            <div class="modal-header">
+                <h5 class="modal-title" id="importPBSOrderModalLabel">
+                    <i class="bi bi-upload"></i> Import PBS Order
+                </h5>
+                <button type="button" class="btn-close"
+                        data-bs-dismiss="modal"
+                        aria-label="Close"></button>
+            </div>
+
+            <form
+                action="{{ url_for('main.import_pbs_orders') }}"
+                method="POST"
+                enctype="multipart/form-data"
+            >
+                <input
+                    type="hidden"
+                    name="csrf_token"
+                    value="{{ csrf_token() }}"
+                >
+
+                <div class="modal-body">
+
+                    <p class="text-muted">
+                        Select a PBS Order Report CSV file to import
+                        Work Items, Supplier Orders, and Parts.
+                    </p>
+
+                    <div class="mb-3">
+                        <label for="pbsOrderCSV" class="form-label">
+                            PBS Order CSV File
+                        </label>
+
+                        <input
+                            type="file"
+                            class="form-control"
+                            id="pbsOrderCSV"
+                            name="csv_file"
+                            accept=".csv,text/csv"
+                            required
+                        >
+                    </div>
+
+                    <div class="alert alert-info mb-0">
+                        <i class="bi bi-info-circle"></i>
+                        Existing Supplier Orders will be skipped.
+                        New Work Items and Parts will be added automatically.
+                    </div>
+
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button"
+                            class="btn btn-secondary"
+                            data-bs-dismiss="modal">
+                        Cancel
+                    </button>
+
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-upload"></i> Import Order
+                    </button>
+                </div>
+
+            </form>
+
+        </div>
+    </div>
 </div>
 
 <script>
