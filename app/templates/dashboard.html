@@ -357,46 +357,70 @@
 
                             <!-- Actions -->
                             <td>
-                                <div class="d-flex gap-2">
+                                <div class="d-flex align-items-center gap-2">
 
                                     <!-- Save Form -->
                                     <form id="{{ form_id }}"
-                                          method="POST"
-                                          action="{{ url_for('main.update_work_item_dashboard', item_id=item.id) }}"
-                                          class="flex-fill mb-0"
-                                          data-receiving-status="{{ item.parts_status }}"
-                                          onsubmit="return confirmAppointmentSave(this);">
+                                        method="POST"
+                                        action="{{ url_for('main.update_work_item_dashboard', item_id=item.id) }}"
+                                        class="mb-0"
+                                        data-receiving-status="{{ item.parts_status }}"
+                                        onsubmit="return confirmAppointmentSave(this);">
 
-                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <input type="hidden"
+                                            name="csrf_token"
+                                            value="{{ csrf_token() }}">
 
                                         <button type="submit"
+                                                class="btn btn-sm btn-outline-primary"
+                                                style="width: 38px; height: 32px;"
                                                 title="Save Changes"
-                                                aria-label="Save Changes"
-                                                class="btn btn-sm btn-outline-primary w-100">
+                                                aria-label="Save Changes">
+
                                             <i class="bi bi-save"></i>
+
                                         </button>
 
                                     </form>
 
                                     <!-- Archive Form -->
                                     <form method="POST"
-                                          action="{{ url_for('main.archive_work_item', item_id=item.id) }}"
-                                          class="flex-fill mb-0"
-                                          onsubmit="return confirm('Archive this Work Item?');">
+                                        action="{{ url_for('main.archive_work_item', item_id=item.id) }}"
+                                        class="mb-0"
+                                        onsubmit="return confirm('Archive this Work Item?');">
 
-                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <input type="hidden"
+                                            name="csrf_token"
+                                            value="{{ csrf_token() }}">
 
                                         <button type="submit"
+                                                class="btn btn-sm btn-outline-warning"
+                                                style="width: 38px; height: 32px;"
                                                 title="Archive Work Item"
-                                                aria-label="Archive Work Item"
-                                                class="btn btn-sm btn-outline-warning">
+                                                aria-label="Archive Work Item">
+
                                             <i class="bi bi-archive"></i>
+
                                         </button>
 
                                     </form>
-                                </div>
 
+                                    <!-- View Parts Button -->
+                                    <button type="button"
+                                            class="btn btn-sm btn-outline-info"
+                                            style="width: 38px; height: 32px;"
+                                            title="View Parts"
+                                            aria-label="View Parts"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#partsModal{{ item.id }}">
+
+                                        <i class="bi bi-list-ul"></i>
+
+                                    </button>                                    
+
+                                </div>
                             </td>
+
 
                         </tr>
 
@@ -424,6 +448,114 @@
     </div>
 
 </div>
+
+
+<!-- View Parts Modals -->
+{% for item in work_items %}
+<div class="modal fade"
+     id="partsModal{{ item.id }}"
+     tabindex="-1"
+     aria-labelledby="partsModalLabel{{ item.id }}"
+     aria-hidden="true">
+
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+
+        <div class="modal-content">
+
+            <div class="modal-header">
+                <h5 class="modal-title"
+                    id="partsModalLabel{{ item.id }}">
+                    Parts - {{ item.type }} #{{ item.number }}
+                </h5>
+
+                <button type="button"
+                        class="btn-close"
+                        data-bs-dismiss="modal"
+                        aria-label="Close">
+                </button>
+            </div>
+
+            <div class="modal-body">
+
+                <div class="table-responsive">
+
+                    <table class="table table-striped table-bordered align-middle">
+
+                        <thead class="table-light">
+                            <tr>
+                                <th>Part Number</th>
+                                <th>Part Description</th>
+                                <th class="text-center">Qty Ordered</th>
+                                <th class="text-center">Qty Received</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+
+                            {% for order in item.parts_orders %}
+                                {% for part in order.parts %}
+
+                                <tr>
+                                    <td>{{ part.part_number }}</td>
+                                    <td>{{ part.description }}</td>
+                                    <td class="text-center">
+                                        {{ part.quantity_ordered }}
+                                    </td>
+                                    <td class="text-center">
+                                        {{ part.quantity_received }}
+                                    </td>
+                                </tr>
+
+                                {% endfor %}
+                            {% endfor %}
+
+                        </tbody>
+
+                        {% set totals = namespace(ordered=0, received=0) %}
+
+                        {% for order in item.parts_orders %}
+                            {% for part in order.parts %}
+                                {% set totals.ordered = totals.ordered + part.quantity_ordered %}
+                                {% set totals.received = totals.received + part.quantity_received %}
+                            {% endfor %}
+                        {% endfor %}
+
+                        <tfoot class="table-light">
+                            <tr>
+                                <th colspan="2" class="text-end">Total:</th>
+                                <th class="text-center">{{ totals.ordered }}</th>
+                                <th class="text-center">{{ totals.received }}</th>
+                            </tr>
+                        </tfoot>
+
+
+                    </table>
+
+                </div>
+
+                {% if not item.parts_orders %}
+                    <p class="text-muted text-center">
+                        No parts have been added to this Work Item.
+                    </p>
+                {% endif %}
+
+            </div>
+
+            <div class="modal-footer">
+                <button type="button"
+                        class="btn btn-secondary"
+                        data-bs-dismiss="modal">
+                    Close
+                </button>
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endfor %}
 
 
 <!-- Check Work Item Modal -->
@@ -509,8 +641,8 @@
                                 id="checkWorkItemButton"
                                 class="btn btn-primary">
 
-                            <i class="bi bi-search"></i>
-                            Check Work Item
+                            <i class="bi bi-arrow-right"></i>
+                            Next
 
                         </button>
 
@@ -608,7 +740,7 @@
             updateRefreshStatus();
 
             // Never refresh while editing or with unsaved changes
-            if (autoRefreshPaused || checkModalOpen) {
+            if (autoRefreshPaused || checkModalOpen || partsModalOpen) {
                 return;
             }
 
@@ -971,9 +1103,32 @@
         } finally {
             checkWorkItemButton.disabled = false;
             checkWorkItemButton.innerHTML =
-                '<i class="bi bi-search"></i> Check Work Item';
+                '<i class="bi bi-arrow-right"></i> Next';
         }
     });
+
+
+    // Track whether a View Parts modal is open
+    let partsModalOpen = false;
+
+    // Find all View Parts modals
+    const partsModals = document.querySelectorAll('[id^="partsModal"]');
+
+    partsModals.forEach(modal => {
+
+        // Pause auto-refresh when a Parts modal opens
+        modal.addEventListener("show.bs.modal", function () {
+            partsModalOpen = true;
+        });
+
+        // Resume auto-refresh when the modal closes
+        modal.addEventListener("hidden.bs.modal", function () {
+            partsModalOpen = false;
+            startAutoRefresh();
+        });
+
+    });
+
 
 </script>
 
