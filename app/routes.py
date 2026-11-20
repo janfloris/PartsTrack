@@ -267,7 +267,7 @@ def new_work_item():
     if request.method == "POST":
         number = request.form.get("number", "").strip()
         item_type = request.form.get("type", "").strip()
-        customer = request.form.get("customer", "").strip()
+        customer = request.form.get("customer", "").strip().upper()
         technician = request.form.get("technician", "").strip()
         notes = request.form.get("notes", "").strip()
 
@@ -514,7 +514,7 @@ def update_work_item_details(item_id):
     # Get updated values from the Edit Work Item modal
     number = request.form.get("number", "").strip()
     item_type = request.form.get("type", "").strip()
-    customer = request.form.get("customer", "").strip()
+    customer = request.form.get("customer", "").strip().upper()
 
     # Validate required fields
     if not number or not item_type or not customer:
@@ -575,6 +575,7 @@ def update_work_item_details(item_id):
 
 
 @main.route("/work-item/<int:item_id>/add-order", methods=["POST"])
+@login_required
 def add_parts_order(item_id):
     work_item = db.get_or_404(WorkItem, item_id)
 
@@ -603,38 +604,6 @@ def add_parts_order(item_id):
     return redirect(
         url_for("main.work_item_details", item_id=item_id)
     )
-
-
-    if request.method == "POST":
-        number = request.form.get("number", "").strip()
-        item_type = request.form.get("type", "").strip()
-        customer = request.form.get("customer", "").strip()
-        technician = request.form.get("technician", "").strip()
-        notes = request.form.get("notes", "").strip()
-
-        if not number or not item_type or not customer:
-            flash(
-                "Work Item Number, Type, and Customer are required.",
-                "danger"
-            )
-            return redirect(url_for("main.new_work_item"))
-
-        work_item = WorkItem(
-            number=number,
-            type=item_type,
-            customer=customer,
-            technician=technician,
-            notes=notes
-        )
-
-        db.session.add(work_item)
-        db.session.commit()
-
-        flash("Work Item created successfully!", "success")
-
-        return redirect(url_for("main.dashboard"))
-
-    return render_template("new_work_item.html")
 
 
 @main.route("/archive/<int:item_id>", methods=["POST"])
@@ -1640,7 +1609,7 @@ def import_pbs_orders():
             reference = field("reference")
             part_number = field("part number")
             description = field("description")
-            customer = field("customer name")
+            customer = field("customer name").upper()
             supplier = field("source")
             quantity_text = field("qty")
 
@@ -1800,6 +1769,328 @@ def import_pbs_orders():
         current_app.logger.exception("PBS Order Import failed")
         flash(
             "An unexpected error occurred while importing the PBS order.",
+            "danger"
+        )
+
+    return redirect(url_for("main.dashboard"))
+
+
+@main.route("/import-pbs-sop", methods=["POST"])
+@login_required
+def import_pbs_sop():
+    from decimal import Decimal, InvalidOperation
+
+    uploaded_file = request.files.get("csv_file")
+
+    if not uploaded_file or not uploaded_file.filename:
+        flash("Please select a PBS SOP CSV file.", "danger")
+        return redirect(url_for("main.dashboard"))
+
+    if not uploaded_file.filename.lower().endswith(".csv"):
+        flash("Only CSV files are supported.", "danger")
+        return redirect(url_for("main.dashboard"))
+
+    try:
+        file_bytes = uploaded_file.stream.read(10 * 1024 * 1024 + 1)
+
+        if len(file_bytes) > 10 * 1024 * 1024:
+            raise ValueError("CSV exceeds the 10 MB limit.")
+
+        try:
+            csv_text = file_bytes.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            csv_text = file_bytes.decode("cp1252")
+
+        rows = list(csv.reader(io.StringIO(csv_text)))
+
+        if len(rows) < 5:
+            raise ValueError("Invalid SOP CSV file.")
+
+        # Confirm this is a PBS SOP Notification List.
+        if "SOP Notification List" not in rows[1]:
+            raise ValueError(
+                "This is not a PBS SOP Notification List."
+            )
+
+        # PBS uses a two-row heading, with blank columns.
+        # These are the actual positions in the SOP export.
+        header = rows[3]
+
+        expected_columns = {
+            1: "Name",
+            9: "Part Number",
+            11: "Description",
+            12: "Order #",
+            17: "Rcvd",
+            21: "Invoice"
+        }
+
+        for index, heading in expected_columns.items():
+            if (
+                index >= len(header)
+                or header[index].strip().lower() != heading.lower()
+            ):
+                raise ValueError(
+                    f"Unexpected SOP column layout: {heading}"
+                )
+
+        # Read and normalize the SOP records.
+        records = []
+        previous_record = None
+
+        for line_number, row in enumerate(rows[4:], start=5):
+            row = row + [""] * max(0, 22 - len(row))
+
+            if not any(cell.strip() for cell in row):
+                continue
+
+            part_number = row[9].strip()
+            invoice = row[21].strip()
+
+            if not part_number and not invoice:
+                # Customer names may continue onto the next row.
+                # Phone number continuations are ignored.
+                nonempty = {
+                    index
+                    for index, value in enumerate(row)
+                    if value.strip()
+                }
+
+                if nonempty.issubset({1, 5}) and previous_record:
+                    continuation = row[1].strip()
+
+                    if continuation:
+                        previous_record["customer"] += (
+                            " " + continuation.upper()
+                        )
+
+                elif row[0].strip().startswith("*"):
+                    # PBS footer note.
+                    continue
+
+                else:
+                    raise ValueError(
+                        f"Unexpected data on CSV line {line_number}."
+                    )
+
+                continue
+
+            if not part_number or not invoice:
+                raise ValueError(
+                    f"Line {line_number}: Missing part or Invoice."
+                )
+
+            quantity_text = row[18].strip()
+
+            try:
+                quantity_decimal = Decimal(quantity_text)
+
+                if (
+                    not quantity_decimal.is_finite()
+                    or quantity_decimal <= 0
+                    or quantity_decimal != quantity_decimal.to_integral_value()
+                ):
+                    raise ValueError()
+
+                quantity = int(quantity_decimal)
+
+            except (InvalidOperation, ValueError):
+                raise ValueError(
+                    f"Line {line_number}: Invalid received quantity "
+                    f"'{quantity_text}'."
+                )
+
+            record = {
+                "line": line_number,
+                "invoice": invoice,
+                "part_number": part_number,
+                "customer": row[1].strip().upper(),
+                "order_number": row[12].strip(),
+                "quantity": quantity
+            }
+
+            records.append(record)
+            previous_record = record
+
+        if not records:
+            raise ValueError("No received parts found in the SOP CSV.")
+
+        # Identify repeated Work Item / Part combinations.
+        # Do not guess how repeated rows should be allocated.
+        record_counts = {}
+
+        for record in records:
+            key = (record["invoice"], record["part_number"])
+            record_counts[key] = record_counts.get(key, 0) + 1
+
+        warnings = []
+        updates = []
+        skipped = 0
+
+        # Validate all matches before changing the database.
+        for record in records:
+            invoice = record["invoice"]
+            part_number = record["part_number"]
+            quantity = record["quantity"]
+            key = (invoice, part_number)
+
+            identifier = f"Work Item #{invoice}, Part #{part_number}"
+
+            if record_counts[key] > 1:
+                warnings.append(
+                    f"{identifier}: Multiple SOP records found. "
+                    "Manual review required."
+                )
+                skipped += 1
+                continue
+
+            work_items = WorkItem.query.filter_by(
+                number=invoice
+            ).all()
+
+            if not work_items:
+                warnings.append(
+                    f"{identifier}: Work Item not found."
+                )
+                skipped += 1
+                continue
+
+            # Search all Supplier Orders under matching Work Items.
+            matches = []
+
+            for item in work_items:
+                for order in item.parts_orders:
+                    for part in order.parts:
+                        if part.part_number == part_number:
+                            matches.append((item, order, part))
+
+            # Use the PBS Order Number to narrow multiple matches.
+            if len(matches) > 1 and record["order_number"]:
+                matching_orders = [
+                    match for match in matches
+                    if match[1].order_number == record["order_number"]
+                ]
+
+                if matching_orders:
+                    matches = matching_orders
+
+            if len(matches) != 1:
+                reason = (
+                    "Part not found."
+                    if not matches
+                    else "Multiple matching parts found."
+                )
+
+                warnings.append(f"{identifier}: {reason}")
+                skipped += 1
+                continue
+
+            item, order, part = matches[0]
+
+            if quantity > part.quantity_ordered:
+                warnings.append(
+                    f"{identifier}: SOP quantity {quantity} exceeds "
+                    f"ordered quantity {part.quantity_ordered}. "
+                    "Not updated."
+                )
+                skipped += 1
+                continue
+
+            if quantity != part.quantity_ordered:
+                warnings.append(
+                    f"{identifier}: SOP quantity {quantity} differs "
+                    f"from ordered quantity {part.quantity_ordered}."
+                )
+
+            updates.append((item, part, quantity, record["customer"]))
+
+        # Check for conflicting customer names within the same Work Item.
+        customer_names_by_item = {}
+
+        for item, part, quantity, customer in updates:
+            if not customer:
+                continue
+
+            customer_names_by_item.setdefault(item.id, set()).add(
+                customer.strip().upper()
+            )
+
+        conflicting_item_ids = {
+            item_id
+            for item_id, names in customer_names_by_item.items()
+            if len(names) > 1
+        }
+
+        if conflicting_item_ids:
+            warnings.append(
+                f"Conflicting customer names found for "
+                f"{len(conflicting_item_ids)} Work Item(s). "
+                "Those Work Items were not updated."
+            )
+
+            skipped += sum(
+                1 for item, part, quantity, customer in updates
+                if item.id in conflicting_item_ids
+            )
+
+            updates = [
+                (item, part, quantity, customer)
+                for item, part, quantity, customer in updates
+                if item.id not in conflicting_item_ids
+            ]
+            
+        # Apply validated updates.
+        changed = 0
+        unchanged = 0
+
+        corrected_customers = 0
+
+        for item, part, quantity, customer in updates:
+
+            # Update customer name using the SOP information.
+            if customer and item.customer != customer:
+                item.customer = customer.upper()
+                corrected_customers += 1
+
+            # Set received quantity to the SOP quantity.
+            if part.quantity_received == quantity:
+                unchanged += 1
+            else:
+                part.quantity_received = quantity
+                changed += 1
+
+        db.session.commit()
+
+        flash(
+            f"PBS SOP Import completed. "
+            f"Updated: {changed}, "
+            f"Already correct: {unchanged}, "
+            f"Skipped: {skipped}, "
+            f"Customer names corrected: {corrected_customers}, "
+            f"Warnings: {len(warnings)}.",
+            "success"
+        )
+
+        # Show each warning on the dashboard.
+        for warning in warnings[:20]:
+            flash(warning, "warning")
+
+        if len(warnings) > 20:
+            flash(
+                f"{len(warnings) - 20} additional warnings "
+                "were not displayed.",
+                "warning"
+            )
+
+    except (ValueError, csv.Error) as error:
+        db.session.rollback()
+        flash(f"PBS SOP Import failed: {error}", "danger")
+
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("PBS SOP Import failed")
+        flash(
+            "An unexpected error occurred during the SOP Import.",
             "danger"
         )
 

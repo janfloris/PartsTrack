@@ -37,6 +37,15 @@
                 <i class="bi bi-upload"></i> Import PBS Order
             </button>
 
+            <button
+                type="button"
+                class="btn btn-outline-success"
+                data-bs-toggle="modal"
+                data-bs-target="#importPBSSOPModal"
+            >
+                <i class="bi bi-box-arrow-in-down"></i> Import PBS SOP
+            </button>            
+
             <button type="button"
                     class="btn btn-primary"
                     data-bs-toggle="modal"
@@ -697,13 +706,13 @@
                 <div class="modal-body">
 
                     <p class="text-muted">
-                        Select a PBS Order Report CSV file to import
-                        Work Items, Supplier Orders, and Parts.
+                        Select a PBS Order/SOP CSV file to import.<br>
+                        <small>*Export the Order or SOP report from PBS to Excel and save it as a CSV file.</small>
                     </p>
 
                     <div class="mb-3">
                         <label for="pbsOrderCSV" class="form-label">
-                            PBS Order CSV File
+                            PBS CSV File
                         </label>
 
                         <input
@@ -741,6 +750,89 @@
         </div>
     </div>
 </div>
+
+
+<!-- Import PBS SOP Modal -->
+<div class="modal fade" id="importPBSSOPModal" tabindex="-1"
+     aria-labelledby="importPBSSOPModalLabel" aria-hidden="true">
+
+    <div class="modal-dialog">
+        <div class="modal-content">
+
+            <div class="modal-header">
+                <h5 class="modal-title" id="importPBSSOPModalLabel">
+                    <i class="bi bi-box-arrow-in-down"></i>
+                    Import PBS SOP
+                </h5>
+
+                <button type="button" class="btn-close"
+                        data-bs-dismiss="modal"
+                        aria-label="Close"></button>
+            </div>
+
+            <form
+                action="{{ url_for('main.import_pbs_sop') }}"
+                method="POST"
+                enctype="multipart/form-data"
+            >
+                <input
+                    type="hidden"
+                    name="csrf_token"
+                    value="{{ csrf_token() }}"
+                >
+
+                <div class="modal-body">
+
+                    <p class="text-muted">
+                        Select a PBS SOP Notification CSV file to
+                        update received quantities and customer names.
+                    </p>
+
+                    <div class="mb-3">
+                        <label for="pbsSOPCSV" class="form-label">
+                            PBS SOP CSV File
+                        </label>
+
+                        <input
+                            type="file"
+                            class="form-control"
+                            id="pbsSOPCSV"
+                            name="csv_file"
+                            accept=".csv,text/csv"
+                            required
+                        >
+                    </div>
+
+                    <div class="alert alert-info mb-0">
+                        <i class="bi bi-info-circle"></i>
+                        Received quantities will be set to the
+                        values in the SOP file. Existing quantities
+                        will not be added together.
+                    </div>
+
+                </div>
+
+                <div class="modal-footer">
+
+                    <button type="button"
+                            class="btn btn-secondary"
+                            data-bs-dismiss="modal">
+                        Cancel
+                    </button>
+
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-box-arrow-in-down"></i>
+                        Import SOP
+                    </button>
+
+                </div>
+
+            </form>
+
+        </div>
+    </div>
+</div>
+
 
 <script>
     function confirmAppointmentSave(form) {
@@ -823,8 +915,13 @@
             // Check the current editing state before refreshing
             updateRefreshStatus();
 
-            // Never refresh while editing or with unsaved changes
-            if (autoRefreshPaused || checkModalOpen || partsModalOpen) {
+            // Never refresh while editing, with unsaved changes,
+            // or while any Bootstrap modal is open.
+            const anyModalOpen = document.querySelector(
+                ".modal.show, .modal.showing, .modal.hiding"
+            ) !== null;
+
+            if (autoRefreshPaused || anyModalOpen) {
                 return;
             }
 
@@ -1213,6 +1310,22 @@
 
     });
 
+    // Track whether a PBS import modal is open
+    let importModalOpen = false;
+
+    //Find the Import PBS Order modal
+    const importPBSOrderModal = document.getElementById("importPBSOrderModal");
+
+    //Pause auto-refresh when the Import PBS Order modal opens
+    importPBSOrderModal.addEventListener("show.bs.modal", function () {
+        importModalOpen = true;
+    });
+
+    // Resume auto-refresh when the Import PBS Order modal closes
+    importPBSOrderModal.addEventListener("hidden.bs.modal", function () {
+        importModalOpen = false;
+        startAutoRefresh();
+    });
 
 </script>
 
