@@ -229,4 +229,54 @@ class Notification(db.Model):
 
     def __repr__(self):
         return f"<Notification {self.id}>"
-    
+
+class ReceiptImport(db.Model):
+    __tablename__ = "receipt_import"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    receipt_name = db.Column(
+        db.String(150),
+        nullable=False
+    )
+
+    receipt_date = db.Column(
+        db.Date,
+        nullable=False
+    )
+
+    fingerprint = db.Column(
+        db.String(64),
+        unique=True,
+        nullable=False
+    )
+
+    filename = db.Column(
+        db.String(255),
+        nullable=False
+    )
+
+    imported_at = db.Column(
+        db.DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+
+    imported_by = db.Column(
+        db.String(80),
+        nullable=False
+    )
+
+    parts_updated = db.Column(
+        db.Integer,
+        default=0,
+        nullable=False
+    )
+
+    warnings = db.Column(
+        db.Text,
+        nullable=True
+    )
+
+    def __repr__(self):
+        return f"<ReceiptImport {self.id}: {self.receipt_name}>"

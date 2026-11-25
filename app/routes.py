@@ -1,7 +1,17 @@
-import csv
 import io
-from collections import defaultdict
+import hashlib
+import json
+import re
 
+from collections import defaultdict
+from decimal import Decimal, InvalidOperation
+from datetime import date, datetime
+from functools import wraps
+from openpyxl import load_workbook
+from openpyxl.utils.exceptions import InvalidFileException
+from zipfile import BadZipFile
+from sqlalchemy.exc import IntegrityError
+from app import db
 from flask import (
     Blueprint,
     current_app,
@@ -13,17 +23,22 @@ from flask import (
     abort,
     jsonify
 )
-from sqlalchemy.exc import IntegrityError
-from app import db
 from flask_login import (
     current_user,
     login_user,
     logout_user,
     login_required
 )
-from app.models import WorkItem, PartsOrder, PartLine, Technician, Supplier, User, Notification 
-from datetime import date, datetime
-from functools import wraps
+from app.models import (
+    WorkItem,
+    PartsOrder,
+    PartLine,
+    Technician,
+    Supplier,
+    User,
+    Notification,
+    ReceiptImport
+)
 
 main = Blueprint("main", __name__)
 
@@ -1473,14 +1488,14 @@ def check_notifications():
 @main.route("/import-pbs-orders", methods=["POST"])
 @login_required
 def import_pbs_orders():
-    uploaded_file = request.files.get("csv_file")
+    uploaded_file = request.files.get("excel_file")
 
     if not uploaded_file or not uploaded_file.filename:
-        flash("Please select a PBS Order CSV file.", "danger")
+        flash("Please select a PBS Order Excel file.", "danger")
         return redirect(url_for("main.dashboard"))
 
-    if not uploaded_file.filename.lower().endswith(".csv"):
-        flash("Only CSV files are supported.", "danger")
+    if not uploaded_file.filename.lower().endswith(".xlsx"):
+        flash("Only Excel (.xlsx) files are supported.", "danger")
         return redirect(url_for("main.dashboard"))
 
     try:
@@ -1488,17 +1503,40 @@ def import_pbs_orders():
         file_bytes = uploaded_file.stream.read(10 * 1024 * 1024 + 1)
 
         if len(file_bytes) > 10 * 1024 * 1024:
-            raise ValueError("CSV file exceeds the 10 MB limit.")
+            raise ValueError("Excel file exceeds the 10 MB limit.")
+
+        # Open the Excel workbook.
+        workbook = load_workbook(
+            io.BytesIO(file_bytes),
+            read_only=True,
+            data_only=True
+        )
 
         try:
-            csv_text = file_bytes.decode("utf-8-sig")
-        except UnicodeDecodeError:
-            csv_text = file_bytes.decode("cp1252")
+            worksheet = workbook.worksheets[0]
 
-        rows = list(csv.reader(io.StringIO(csv_text)))
+            # Convert Excel cell values into strings so that
+            # the existing import logic can process them.
+            rows = []
+
+            for excel_row in worksheet.iter_rows(values_only=True):
+                row = []
+
+                for value in excel_row:
+                    if value is None:
+                        row.append("")
+                    elif isinstance(value, float) and value.is_integer():
+                        row.append(str(int(value)))
+                    else:
+                        row.append(str(value).strip())
+
+                rows.append(row)
+
+        finally:
+            workbook.close()
 
         if len(rows) < 5:
-            raise ValueError("The CSV does not contain enough rows.")
+            raise ValueError("The Excel file does not contain enough rows.")
 
         # Line 2 contains the PBS Order Number.
         order_header = rows[1][0].strip()
@@ -1529,7 +1567,7 @@ def import_pbs_orders():
         for column in required_columns:
             if column not in headings:
                 raise ValueError(
-                    f"Required CSV column is missing: {column}"
+                    f"Required Excel column is missing: {column}"
                 )
 
         columns = {
@@ -1599,7 +1637,12 @@ def import_pbs_orders():
             if not any(cell.strip() for cell in row):
                 continue
 
-            if not row[columns["reference"]].strip():
+            # Ignore stock orders, notes continuation rows
+            # and other rows without a Work Item and Part Number.
+            if (
+                not row[columns["reference"]].strip()
+                or not row[columns["part number"]].strip()
+            ):
                 continue
 
             def field(name):
@@ -1687,7 +1730,7 @@ def import_pbs_orders():
             })
 
         if not grouped_orders:
-            raise ValueError("No parts were found in the CSV.")
+            raise ValueError("No customer-ordered parts were found in the Excel file.")
 
         created_items = 0
         created_orders = 0
@@ -1760,7 +1803,7 @@ def import_pbs_orders():
             "success"
         )
 
-    except (ValueError, csv.Error) as error:
+    except (ValueError, InvalidFileException, BadZipFile) as error:
         db.session.rollback()
         flash(f"PBS import failed: {error}", "danger")
 
@@ -1775,322 +1818,480 @@ def import_pbs_orders():
     return redirect(url_for("main.dashboard"))
 
 
-@main.route("/import-pbs-sop", methods=["POST"])
-@login_required
-def import_pbs_sop():
-    from decimal import Decimal, InvalidOperation
+def read_pbs_receipt(file_bytes):
 
-    uploaded_file = request.files.get("csv_file")
-
-    if not uploaded_file or not uploaded_file.filename:
-        flash("Please select a PBS SOP CSV file.", "danger")
-        return redirect(url_for("main.dashboard"))
-
-    if not uploaded_file.filename.lower().endswith(".csv"):
-        flash("Only CSV files are supported.", "danger")
-        return redirect(url_for("main.dashboard"))
+    workbook = load_workbook(
+        io.BytesIO(file_bytes),
+        read_only=True,
+        data_only=True
+    )
 
     try:
-        file_bytes = uploaded_file.stream.read(10 * 1024 * 1024 + 1)
+        worksheet = workbook.worksheets[0]
 
-        if len(file_bytes) > 10 * 1024 * 1024:
-            raise ValueError("CSV exceeds the 10 MB limit.")
+        rows = list(
+            worksheet.iter_rows(values_only=True)
+        )
 
-        try:
-            csv_text = file_bytes.decode("utf-8-sig")
-        except UnicodeDecodeError:
-            csv_text = file_bytes.decode("cp1252")
+    finally:
+        workbook.close()
 
-        rows = list(csv.reader(io.StringIO(csv_text)))
+    if len(rows) < 6:
+        raise ValueError(
+            "The Excel file does not contain enough rows."
+        )
 
-        if len(rows) < 5:
-            raise ValueError("Invalid SOP CSV file.")
+    def cell_text(value):
+        if value is None:
+            return ""
 
-        # Confirm this is a PBS SOP Notification List.
-        if "SOP Notification List" not in rows[1]:
+        if isinstance(value, float) and value.is_integer():
+            return str(int(value))
+
+        return str(value).strip()
+
+    # Extract receipt information from row 4.
+    receipt_header = cell_text(rows[3][0])
+
+    header_match = re.search(
+        r"Receipt:\s*(.*?)\s+Received:\s*"
+        r"(\d{1,2}/\d{1,2}/\d{4})",
+        receipt_header,
+        re.IGNORECASE
+    )
+
+    if not header_match:
+        raise ValueError(
+            "PBS Receipt information was not found."
+        )
+
+    receipt_name = header_match.group(1).strip()
+
+    receipt_date = datetime.strptime(
+        header_match.group(2),
+        "%m/%d/%Y"
+    ).date()
+
+    # Row 5 contains the column headings.
+    headings = [
+        cell_text(value).lower()
+        for value in rows[4]
+    ]
+
+    required_columns = [
+        "part number",
+        "type",
+        "reference",
+        "ordered",
+        "receipted",
+        "cancelled"
+    ]
+
+    for column in required_columns:
+        if column not in headings:
             raise ValueError(
-                "This is not a PBS SOP Notification List."
+                f"Required Excel column is missing: {column}"
             )
 
-        # PBS uses a two-row heading, with blank columns.
-        # These are the actual positions in the SOP export.
-        header = rows[3]
+    columns = {
+        name: headings.index(name)
+        for name in required_columns
+    }
 
-        expected_columns = {
-            1: "Name",
-            9: "Part Number",
-            11: "Description",
-            12: "Order #",
-            17: "Rcvd",
-            21: "Invoice"
-        }
+    # Convert PBS reference types to PartsTrack types.
+    valid_types = {
+        "est": "Estimate",
+        "estimate": "Estimate",
+        "inv": "Invoice",
+        "invoice": "Invoice",
+        "wo": "Work Order",
+        "ro": "Work Order",
+        "work order": "Work Order",
+        "quote": "Quote",
+        "quo": "Quote",
+        "qt": "Quote"
+    }
 
-        for index, heading in expected_columns.items():
-            if (
-                index >= len(header)
-                or header[index].strip().lower() != heading.lower()
-            ):
-                raise ValueError(
-                    f"Unexpected SOP column layout: {heading}"
-                )
+    records = []
 
-        # Read and normalize the SOP records.
-        records = []
-        previous_record = None
+    for line_number, row in enumerate(rows[5:], start=6):
 
-        for line_number, row in enumerate(rows[4:], start=5):
-            row = row + [""] * max(0, 22 - len(row))
+        def field(name):
+            index = columns[name]
 
-            if not any(cell.strip() for cell in row):
-                continue
+            if index >= len(row):
+                return ""
 
-            part_number = row[9].strip()
-            invoice = row[21].strip()
+            return cell_text(row[index])
 
-            if not part_number and not invoice:
-                # Customer names may continue onto the next row.
-                # Phone number continuations are ignored.
-                nonempty = {
-                    index
-                    for index, value in enumerate(row)
-                    if value.strip()
-                }
+        # Only process customer-ordered SOP parts.
+        if field("type").upper() != "SOP":
+            continue
 
-                if nonempty.issubset({1, 5}) and previous_record:
-                    continuation = row[1].strip()
+        part_number = field("part number").upper()
+        reference = field("reference")
 
-                    if continuation:
-                        previous_record["customer"] += (
-                            " " + continuation.upper()
-                        )
+        if not part_number or ":" not in reference:
+            raise ValueError(
+                f"Row {line_number}: Invalid part or reference."
+            )
 
-                elif row[0].strip().startswith("*"):
-                    # PBS footer note.
-                    continue
+        reference_type, item_number = [
+            value.strip()
+            for value in reference.split(":", 1)
+        ]
 
-                else:
-                    raise ValueError(
-                        f"Unexpected data on CSV line {line_number}."
-                    )
+        item_type = valid_types.get(
+            reference_type.lower()
+        )
 
-                continue
+        if not item_type or not item_number:
+            raise ValueError(
+                f"Row {line_number}: Invalid Work Item "
+                f"Reference: {reference}"
+            )
 
-            if not part_number or not invoice:
-                raise ValueError(
-                    f"Line {line_number}: Missing part or Invoice."
-                )
-
-            quantity_text = row[18].strip()
+        def read_quantity(name):
+            value = field(name)
 
             try:
-                quantity_decimal = Decimal(quantity_text)
+                quantity = Decimal(value)
 
                 if (
-                    not quantity_decimal.is_finite()
-                    or quantity_decimal <= 0
-                    or quantity_decimal != quantity_decimal.to_integral_value()
+                    not quantity.is_finite()
+                    or quantity < 0
+                    or quantity != quantity.to_integral_value()
                 ):
                     raise ValueError()
 
-                quantity = int(quantity_decimal)
+                return int(quantity)
 
             except (InvalidOperation, ValueError):
                 raise ValueError(
-                    f"Line {line_number}: Invalid received quantity "
-                    f"'{quantity_text}'."
+                    f"Row {line_number}: Invalid "
+                    f"{name} quantity: {value}"
                 )
 
-            record = {
-                "line": line_number,
-                "invoice": invoice,
-                "part_number": part_number,
-                "customer": row[1].strip().upper(),
-                "order_number": row[12].strip(),
-                "quantity": quantity
-            }
+        quantity_ordered = read_quantity("ordered")
+        quantity_receipted = read_quantity("receipted")
+        quantity_cancelled = read_quantity("cancelled")
 
-            records.append(record)
-            previous_record = record
+        records.append({
+            "line_number": line_number,
+            "item_type": item_type,
+            "item_number": item_number,
+            "part_number": part_number,
+            "quantity_ordered": quantity_ordered,
+            "quantity_receipted": quantity_receipted,
+            "quantity_cancelled": quantity_cancelled
+        })
 
-        if not records:
-            raise ValueError("No received parts found in the SOP CSV.")
-
-        # Identify repeated Work Item / Part combinations.
-        # Do not guess how repeated rows should be allocated.
-        record_counts = {}
-
-        for record in records:
-            key = (record["invoice"], record["part_number"])
-            record_counts[key] = record_counts.get(key, 0) + 1
-
-        warnings = []
-        updates = []
-        skipped = 0
-
-        # Validate all matches before changing the database.
-        for record in records:
-            invoice = record["invoice"]
-            part_number = record["part_number"]
-            quantity = record["quantity"]
-            key = (invoice, part_number)
-
-            identifier = f"Work Item #{invoice}, Part #{part_number}"
-
-            if record_counts[key] > 1:
-                warnings.append(
-                    f"{identifier}: Multiple SOP records found. "
-                    "Manual review required."
-                )
-                skipped += 1
-                continue
-
-            work_items = WorkItem.query.filter_by(
-                number=invoice
-            ).all()
-
-            if not work_items:
-                warnings.append(
-                    f"{identifier}: Work Item not found."
-                )
-                skipped += 1
-                continue
-
-            # Search all Supplier Orders under matching Work Items.
-            matches = []
-
-            for item in work_items:
-                for order in item.parts_orders:
-                    for part in order.parts:
-                        if part.part_number == part_number:
-                            matches.append((item, order, part))
-
-            # Use the PBS Order Number to narrow multiple matches.
-            if len(matches) > 1 and record["order_number"]:
-                matching_orders = [
-                    match for match in matches
-                    if match[1].order_number == record["order_number"]
-                ]
-
-                if matching_orders:
-                    matches = matching_orders
-
-            if len(matches) != 1:
-                reason = (
-                    "Part not found."
-                    if not matches
-                    else "Multiple matching parts found."
-                )
-
-                warnings.append(f"{identifier}: {reason}")
-                skipped += 1
-                continue
-
-            item, order, part = matches[0]
-
-            if quantity > part.quantity_ordered:
-                warnings.append(
-                    f"{identifier}: SOP quantity {quantity} exceeds "
-                    f"ordered quantity {part.quantity_ordered}. "
-                    "Not updated."
-                )
-                skipped += 1
-                continue
-
-            if quantity != part.quantity_ordered:
-                warnings.append(
-                    f"{identifier}: SOP quantity {quantity} differs "
-                    f"from ordered quantity {part.quantity_ordered}."
-                )
-
-            updates.append((item, part, quantity, record["customer"]))
-
-        # Check for conflicting customer names within the same Work Item.
-        customer_names_by_item = {}
-
-        for item, part, quantity, customer in updates:
-            if not customer:
-                continue
-
-            customer_names_by_item.setdefault(item.id, set()).add(
-                customer.strip().upper()
-            )
-
-        conflicting_item_ids = {
-            item_id
-            for item_id, names in customer_names_by_item.items()
-            if len(names) > 1
-        }
-
-        if conflicting_item_ids:
-            warnings.append(
-                f"Conflicting customer names found for "
-                f"{len(conflicting_item_ids)} Work Item(s). "
-                "Those Work Items were not updated."
-            )
-
-            skipped += sum(
-                1 for item, part, quantity, customer in updates
-                if item.id in conflicting_item_ids
-            )
-
-            updates = [
-                (item, part, quantity, customer)
-                for item, part, quantity, customer in updates
-                if item.id not in conflicting_item_ids
-            ]
-            
-        # Apply validated updates.
-        changed = 0
-        unchanged = 0
-
-        corrected_customers = 0
-
-        for item, part, quantity, customer in updates:
-
-            # Update customer name using the SOP information.
-            if customer and item.customer != customer:
-                item.customer = customer.upper()
-                corrected_customers += 1
-
-            # Set received quantity to the SOP quantity.
-            if part.quantity_received == quantity:
-                unchanged += 1
-            else:
-                part.quantity_received = quantity
-                changed += 1
-
-        db.session.commit()
-
-        flash(
-            f"PBS SOP Import completed. "
-            f"Updated: {changed}, "
-            f"Already correct: {unchanged}, "
-            f"Skipped: {skipped}, "
-            f"Customer names corrected: {corrected_customers}, "
-            f"Warnings: {len(warnings)}.",
-            "success"
+    if not records:
+        raise ValueError(
+            "No SOP parts were found in the Receipt Report."
         )
 
-        # Show each warning on the dashboard.
-        for warning in warnings[:20]:
-            flash(warning, "warning")
+    return receipt_name, receipt_date, records
 
-        if len(warnings) > 20:
+
+def generate_receipt_fingerprint(receipt_date, records):
+
+    normalized_records = []
+
+    for record in records:
+        normalized_records.append({
+            "item_type": record["item_type"].strip().upper(),
+            "item_number": record["item_number"].strip(),
+            "part_number": record["part_number"].strip().upper(),
+            "quantity_ordered": record["quantity_ordered"],
+            "quantity_receipted": record["quantity_receipted"],
+            "quantity_cancelled": record["quantity_cancelled"]
+        })
+
+    # Sort records so that changing the row order
+    # does not produce a different fingerprint.
+    normalized_records.sort(
+        key=lambda record: (
+            record["item_type"],
+            record["item_number"],
+            record["part_number"],
+            record["quantity_ordered"],
+            record["quantity_receipted"],
+            record["quantity_cancelled"]
+        )
+    )
+
+    fingerprint_data = {
+        "receipt_date": receipt_date.isoformat(),
+        "records": normalized_records
+    }
+
+    serialized_data = json.dumps(
+        fingerprint_data,
+        sort_keys=True,
+        separators=(",", ":")
+    )
+
+    return hashlib.sha256(
+        serialized_data.encode("utf-8")
+    ).hexdigest()
+
+
+@main.route("/import-pbs-receipts", methods=["POST"])
+@login_required
+def import_pbs_receipts():
+
+    uploaded_file = request.files.get("excel_file")
+
+    if not uploaded_file or not uploaded_file.filename:
+        flash("Please select a PBS Receipt Excel file.", "danger")
+        return redirect(url_for("main.dashboard"))
+
+    if not uploaded_file.filename.lower().endswith(".xlsx"):
+        flash("Only Excel (.xlsx) files are supported.", "danger")
+        return redirect(url_for("main.dashboard"))
+
+    try:
+        # Limit uploads to 10 MB.
+        file_bytes = uploaded_file.stream.read(
+            10 * 1024 * 1024 + 1
+        )
+
+        if len(file_bytes) > 10 * 1024 * 1024:
+            raise ValueError(
+                "Excel file exceeds the 10 MB limit."
+            )
+
+        # Read and validate the Receipt Report.
+        receipt_name, receipt_date, records = read_pbs_receipt(
+            file_bytes
+        )
+
+        # Generate the unique receipt fingerprint.
+        fingerprint = generate_receipt_fingerprint(
+            receipt_date,
+            records
+        )
+
+        # Check whether this receipt has already been imported.
+        existing_receipt = ReceiptImport.query.filter_by(
+            fingerprint=fingerprint
+        ).first()
+
+        if existing_receipt:
             flash(
-                f"{len(warnings) - 20} additional warnings "
-                "were not displayed.",
+                f"This receipt has already been imported "
+                f"by {existing_receipt.imported_by} on "
+                f"{existing_receipt.imported_at:%Y-%m-%d %H:%M} UTC. "
+                "No quantities were updated.",
                 "warning"
             )
 
-    except (ValueError, csv.Error) as error:
+            return redirect(url_for("main.dashboard"))
+
+        warnings = []
+        updated_part_ids = set()
+        affected_work_items = {}
+        skipped = 0
+        total_received = 0
+
+        # Register the receipt within the same transaction.
+        receipt_import = ReceiptImport(
+            receipt_name=receipt_name,
+            receipt_date=receipt_date,
+            fingerprint=fingerprint,
+            filename=uploaded_file.filename,
+            imported_by=current_user.username,
+            parts_updated=0
+        )
+
+        db.session.add(receipt_import)
+        db.session.flush()
+
+        # Process each SOP receipt record.
+        for record in records:
+
+            item_type = record["item_type"]
+            item_number = record["item_number"]
+            part_number = record["part_number"]
+
+            quantity_ordered = record["quantity_ordered"]
+            quantity_receipted = record["quantity_receipted"]
+            quantity_cancelled = record["quantity_cancelled"]
+
+            identifier = (
+                f"{item_type} #{item_number}, "
+                f"Part #{part_number}"
+            )
+
+            # Warn about cancellations.
+            # Do not change the ordered quantity.
+            if quantity_cancelled > 0:
+                warnings.append(
+                    f"{identifier}: PBS reports "
+                    f"{quantity_cancelled} cancelled. "
+                    "Ordered quantity was not changed."
+                )
+
+            # Find the matching Work Item.
+            work_item = WorkItem.query.filter_by(
+                number=item_number,
+                type=item_type
+            ).first()
+
+            if not work_item:
+                warnings.append(
+                    f"{identifier}: Work Item not found."
+                )
+
+                skipped += 1
+                continue
+
+            # Find matching parts regardless of supplier
+            # or supplier order number.
+            matching_parts = []
+
+            for order in work_item.parts_orders:
+                for part in order.parts:
+
+                    if (
+                        part.part_number.strip().upper()
+                        == part_number.strip().upper()
+                    ):
+                        matching_parts.append(part)
+
+            if not matching_parts:
+                warnings.append(
+                    f"{identifier}: Part not found."
+                )
+
+                skipped += 1
+                continue
+
+            if len(matching_parts) > 1:
+                warnings.append(
+                    f"{identifier}: Multiple matching parts "
+                    "found. Manual review required."
+                )
+
+                skipped += 1
+                continue
+
+            part = matching_parts[0]
+
+            # Compare the ordered quantities.
+            if quantity_ordered != part.quantity_ordered:
+                warnings.append(
+                    f"{identifier}: PBS ordered quantity "
+                    f"({quantity_ordered}) differs from "
+                    f"PartsTrack ({part.quantity_ordered})."
+                )
+
+            # Nothing to receive on this record.
+            if quantity_receipted == 0:
+                continue
+
+            # Calculate the new received quantity.
+            new_quantity_received = (
+                part.quantity_received + quantity_receipted
+            )
+
+            # Prevent receiving more than was ordered.
+            if new_quantity_received > part.quantity_ordered:
+                warnings.append(
+                    f"{identifier}: Receiving "
+                    f"{quantity_receipted} additional part(s) "
+                    f"would exceed the ordered quantity. "
+                    f"Currently received: {part.quantity_received}, "
+                    f"Ordered: {part.quantity_ordered}. "
+                    "Part was not updated."
+                )
+
+                skipped += 1
+                continue
+
+            # Record the original receiving status before
+            # updating the first part for this Work Item.
+            if work_item.id not in affected_work_items:
+                affected_work_items[work_item.id] = (
+                    work_item,
+                    get_receiving_status(work_item)
+                )
+
+            # Apply the received quantity.
+            part.quantity_received = new_quantity_received
+
+            updated_part_ids.add(part.id)
+            total_received += quantity_receipted
+
+        # Complete the receipt import history.
+        receipt_import.parts_updated = len(updated_part_ids)
+
+        receipt_import.warnings = (
+            "\n".join(warnings) if warnings else None
+        )
+
+        # Generate notifications for Work Items that
+        # became fully received during this import.
+        for work_item, previous_status in affected_work_items.values():
+            notify_when_green(work_item, previous_status)
+
+        # Save receiving updates, notifications and
+        # receipt history together.
+        db.session.commit()
+
+        flash(
+            f"PBS Receipt '{receipt_name}' processed successfully. "
+            f"Parts updated: {len(updated_part_ids)}, "
+            f"Total quantity received: {total_received}, "
+            f"Skipped records: {skipped}, "
+            f"Warnings: {len(warnings)}.",
+            "success" if not warnings else "warning"
+        )
+
+        # Display the first 10 warnings on the dashboard.
+        for warning in warnings[:10]:
+            flash(warning, "warning")
+
+        if len(warnings) > 10:
+            flash(
+                f"{len(warnings) - 10} additional warnings "
+                "were saved in the receipt import history.",
+                "warning"
+            )
+
+    except (ValueError, InvalidFileException, BadZipFile) as error:
+
         db.session.rollback()
-        flash(f"PBS SOP Import failed: {error}", "danger")
+
+        flash(
+            f"PBS Receipt Import failed: {error}",
+            "danger"
+        )
+
+    except IntegrityError:
+
+        db.session.rollback()
+
+        flash(
+            "The receipt could not be saved because of a "
+            "database constraint conflict. It may have "
+            "already been imported by another user. "
+            "No receiving changes were saved.",
+            "warning"
+        )
 
     except Exception:
+
         db.session.rollback()
-        current_app.logger.exception("PBS SOP Import failed")
+
+        current_app.logger.exception(
+            "PBS Receipt Import failed"
+        )
+
         flash(
-            "An unexpected error occurred during the SOP Import.",
+            "An unexpected error occurred while "
+            "importing the PBS receipt.",
             "danger"
         )
 

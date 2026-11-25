@@ -41,9 +41,10 @@
                 type="button"
                 class="btn btn-outline-success"
                 data-bs-toggle="modal"
-                data-bs-target="#importPBSSOPModal"
+                data-bs-target="#importPBSReceiptModal"
             >
-                <i class="bi bi-box-arrow-in-down"></i> Import PBS SOP
+                <i class="bi bi-box-arrow-in-down"></i>
+                Import PBS Receipt
             </button>            
 
             <button type="button"
@@ -693,8 +694,8 @@
             </div>
 
             <form
-                action="{{ url_for('main.import_pbs_orders') }}"
                 method="POST"
+                action="{{ url_for('main.import_pbs_orders') }}"                
                 enctype="multipart/form-data"
             >
                 <input
@@ -706,21 +707,21 @@
                 <div class="modal-body">
 
                     <p class="text-muted">
-                        Select a PBS Order/SOP CSV file to import.<br>
-                        <small>*Export the Order or SOP report from PBS to Excel and save it as a CSV file.</small>
+                        Select the original Excel (.xlsx) Order Report exported from PBS.<br>
+                        <small>*Export (print) the Order report from PBS to Excel.</small>
                     </p>
 
                     <div class="mb-3">
-                        <label for="pbsOrderCSV" class="form-label">
-                            PBS CSV File
+                        <label for="pbsOrderExcel" class="form-label">
+                            Select PBS Order Excel File
                         </label>
 
                         <input
                             type="file"
                             class="form-control"
-                            id="pbsOrderCSV"
-                            name="csv_file"
-                            accept=".csv,text/csv"
+                            id="pbsOrderExcel"
+                            name="excel_file"
+                            accept=".xlsx"
                             required
                         >
                     </div>
@@ -743,6 +744,7 @@
                     <button type="submit" class="btn btn-primary">
                         <i class="bi bi-upload"></i> Import Order
                     </button>
+                    
                 </div>
 
             </form>
@@ -752,77 +754,96 @@
 </div>
 
 
-<!-- Import PBS SOP Modal -->
-<div class="modal fade" id="importPBSSOPModal" tabindex="-1"
-     aria-labelledby="importPBSSOPModalLabel" aria-hidden="true">
-
+<!-- PBS Receipt Import Modal -->
+<div
+    class="modal fade"
+    id="importPBSReceiptModal"
+    tabindex="-1"
+    aria-labelledby="importPBSReceiptModalLabel"
+    aria-hidden="true"
+>
     <div class="modal-dialog">
         <div class="modal-content">
 
-            <div class="modal-header">
-                <h5 class="modal-title" id="importPBSSOPModalLabel">
-                    <i class="bi bi-box-arrow-in-down"></i>
-                    Import PBS SOP
-                </h5>
-
-                <button type="button" class="btn-close"
-                        data-bs-dismiss="modal"
-                        aria-label="Close"></button>
-            </div>
-
             <form
-                action="{{ url_for('main.import_pbs_sop') }}"
                 method="POST"
+                action="{{ url_for('main.import_pbs_receipts') }}"
                 enctype="multipart/form-data"
             >
+
                 <input
                     type="hidden"
                     name="csrf_token"
                     value="{{ csrf_token() }}"
                 >
 
+                <div class="modal-header">
+                    <h5
+                        class="modal-title"
+                        id="importPBSReceiptModalLabel"
+                    >
+                        Import PBS Receipt
+                    </h5>
+
+                    <button
+                        type="button"
+                        class="btn-close"
+                        data-bs-dismiss="modal"
+                        aria-label="Close"
+                    ></button>
+                </div>
+
                 <div class="modal-body">
 
-                    <p class="text-muted">
-                        Select a PBS SOP Notification CSV file to
-                        update received quantities and customer names.
-                    </p>
+                    <div class="alert alert-info">
+                        Select the original Excel (.xlsx)
+                        Receipt Report exported (printed) from PBS.
+                        Only customer parts will be processed.
+                    </div>
 
                     <div class="mb-3">
-                        <label for="pbsSOPCSV" class="form-label">
-                            PBS SOP CSV File
+                        <label
+                            for="pbsReceiptExcel"
+                            class="form-label"
+                        >
+                            Select PBS Receipt Excel File
                         </label>
 
                         <input
                             type="file"
                             class="form-control"
-                            id="pbsSOPCSV"
-                            name="csv_file"
-                            accept=".csv,text/csv"
+                            id="pbsReceiptExcel"
+                            name="excel_file"
+                            accept=".xlsx"
                             required
                         >
                     </div>
 
-                    <div class="alert alert-info mb-0">
-                        <i class="bi bi-info-circle"></i>
-                        Received quantities will be set to the
-                        values in the SOP file. Existing quantities
-                        will not be added together.
+                    <div class="alert alert-warning mb-0">
+                        Received quantities will be added
+                        to existing received quantities.
+                        Duplicate receipts will be blocked.
+                        Cancelled parts will generate warnings.
                     </div>
 
                 </div>
 
                 <div class="modal-footer">
 
-                    <button type="button"
-                            class="btn btn-secondary"
-                            data-bs-dismiss="modal">
+                    <button
+                        type="button"
+                        class="btn btn-secondary"
+                        data-bs-dismiss="modal"
+                    >
                         Cancel
                     </button>
 
-                    <button type="submit" class="btn btn-success">
+                    <button
+                        type="submit"
+                        class="btn btn-success"
+                    >
                         <i class="bi bi-box-arrow-in-down"></i>
-                        Import SOP
+                        Import Receipt
                     </button>
 
                 </div>
@@ -832,7 +853,6 @@
         </div>
     </div>
 </div>
-
 
 <script>
     function confirmAppointmentSave(form) {
