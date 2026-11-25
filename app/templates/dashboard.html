@@ -542,6 +542,7 @@
                             <tr>
                                 <th>Part Number</th>
                                 <th>Part Description</th>
+                                <th>Supplier</th>
                                 <th class="text-center">Qty Ordered</th>
                                 <th class="text-center">Qty Received</th>
                             </tr>
@@ -555,6 +556,7 @@
                                 <tr>
                                     <td>{{ part.part_number }}</td>
                                     <td>{{ part.description }}</td>
+                                    <td>{{ order.supplier }}</td>
                                     <td class="text-center">
                                         {{ part.quantity_ordered }}
                                     </td>
@@ -579,7 +581,7 @@
 
                         <tfoot class="table-light">
                             <tr>
-                                <th colspan="2" class="text-end">Total:</th>
+                                <th colspan="3" class="text-end">Total:</th>
                                 <th class="text-center">{{ totals.ordered }}</th>
                                 <th class="text-center">{{ totals.received }}</th>
                             </tr>
