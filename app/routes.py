@@ -2211,6 +2211,7 @@ def read_pbs_receipt(file_bytes):
         "inv": "Invoice",
         "invoice": "Invoice",
         "wo": "Work Order",
+        "so": "Work Order",
         "ro": "Work Order",
         "work order": "Work Order",
         "service order": "Work Order",
