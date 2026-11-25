@@ -1588,7 +1588,8 @@ def import_pbs_orders():
         }
 
 
-        # Combine customer names that PBS splits across rows.
+        # Combine references and customer names that PBS
+        # splits across multiple rows.
         customer_column = columns["customer name"]
         reference_column = columns["reference"]
         part_column = columns["part number"]
@@ -1597,19 +1598,58 @@ def import_pbs_orders():
         previous_part_row = None
 
         for line_number, row in enumerate(rows[4:], start=5):
+
             nonempty_columns = [
                 index
                 for index, value in enumerate(row)
                 if value.strip()
             ]
 
-            # A customer continuation row has text only
-            # in the Customer Name column.
+            reference = row[reference_column].strip()
+
+            # A Service Order number may appear on the
+            # next row, together with a customer name continuation.
+            is_reference_continuation = (
+                previous_part_row is not None
+                and previous_part_row[reference_column]
+                    .strip().lower() in (
+                        "service order #",
+                        "work order #"
+                    )
+                and re.fullmatch(r"[0-9]+", reference)
+                is not None
+                and all(
+                    index in (reference_column, customer_column)
+                    for index in nonempty_columns
+                )
+            )
+
+            if is_reference_continuation:
+
+                # Append the Work Order number.
+                previous_part_row[reference_column] = (
+                    previous_part_row[reference_column].strip()
+                    + " " + reference
+                )
+
+                # Append any remaining customer name.
+                additional_name = row[customer_column].strip()
+
+                if additional_name:
+                    previous_part_row[customer_column] = (
+                        previous_part_row[customer_column]
+                        + " " + additional_name
+                    ).strip()
+
+                continue
+
+            # Handle normal customer name continuation rows.
             is_customer_continuation = (
                 nonempty_columns == [customer_column]
             )
 
             if is_customer_continuation:
+
                 if previous_part_row is None:
                     raise ValueError(
                         f"Line {line_number}: Customer name "
@@ -1618,16 +1658,17 @@ def import_pbs_orders():
 
                 additional_name = row[customer_column].strip()
 
-                previous_part_row[customer_column] += (
-                    " " + additional_name
-                )
+                previous_part_row[customer_column] = (
+                    previous_part_row[customer_column]
+                    + " " + additional_name
+                ).strip()
 
                 continue
 
             cleaned_rows.append(row)
 
             # Only a valid-looking part row can receive
-            # a customer name continuation.
+            # reference or customer name continuations.
             if (
                 len(row) > max(reference_column, part_column)
                 and row[reference_column].strip()
@@ -1680,6 +1721,7 @@ def import_pbs_orders():
 
             valid_types = {
                 "work order": "Work Order",
+                "service order": "Work Order",
                 "estimate": "Estimate",
                 "invoice": "Invoice",
                 "quote": "Quote"
@@ -2171,6 +2213,7 @@ def read_pbs_receipt(file_bytes):
         "wo": "Work Order",
         "ro": "Work Order",
         "work order": "Work Order",
+        "service order": "Work Order",
         "quote": "Quote",
         "quo": "Quote",
         "qt": "Quote"
