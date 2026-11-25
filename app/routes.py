@@ -1,6 +1,20 @@
+import io
+import hashlib
+import json
+import re
 
+from collections import defaultdict
+from decimal import Decimal, InvalidOperation
+from datetime import date, datetime
+from functools import wraps
+from openpyxl import load_workbook
+from openpyxl.utils.exceptions import InvalidFileException
+from zipfile import BadZipFile
+from sqlalchemy.exc import IntegrityError
+from app import db
 from flask import (
     Blueprint,
+    current_app,
     render_template,
     redirect,
     url_for,
@@ -9,18 +23,22 @@ from flask import (
     abort,
     jsonify
 )
-from sqlalchemy.exc import IntegrityError
-from app import db
 from flask_login import (
     current_user,
     login_user,
     logout_user,
     login_required
 )
-from app.models import WorkItem, PartsOrder, PartLine, Technician, Supplier, User, Notification 
-from datetime import date, datetime
-from functools import wraps
-from flask import abort, jsonify
+from app.models import (
+    WorkItem,
+    PartsOrder,
+    PartLine,
+    Technician,
+    Supplier,
+    User,
+    Notification,
+    ReceiptImport
+)
 
 main = Blueprint("main", __name__)
 
@@ -264,7 +282,7 @@ def new_work_item():
     if request.method == "POST":
         number = request.form.get("number", "").strip()
         item_type = request.form.get("type", "").strip()
-        customer = request.form.get("customer", "").strip()
+        customer = request.form.get("customer", "").strip().upper()
         technician = request.form.get("technician", "").strip()
         notes = request.form.get("notes", "").strip()
 
@@ -511,7 +529,7 @@ def update_work_item_details(item_id):
     # Get updated values from the Edit Work Item modal
     number = request.form.get("number", "").strip()
     item_type = request.form.get("type", "").strip()
-    customer = request.form.get("customer", "").strip()
+    customer = request.form.get("customer", "").strip().upper()
 
     # Validate required fields
     if not number or not item_type or not customer:
@@ -572,6 +590,7 @@ def update_work_item_details(item_id):
 
 
 @main.route("/work-item/<int:item_id>/add-order", methods=["POST"])
+@login_required
 def add_parts_order(item_id):
     work_item = db.get_or_404(WorkItem, item_id)
 
@@ -600,38 +619,6 @@ def add_parts_order(item_id):
     return redirect(
         url_for("main.work_item_details", item_id=item_id)
     )
-
-
-    if request.method == "POST":
-        number = request.form.get("number", "").strip()
-        item_type = request.form.get("type", "").strip()
-        customer = request.form.get("customer", "").strip()
-        technician = request.form.get("technician", "").strip()
-        notes = request.form.get("notes", "").strip()
-
-        if not number or not item_type or not customer:
-            flash(
-                "Work Item Number, Type, and Customer are required.",
-                "danger"
-            )
-            return redirect(url_for("main.new_work_item"))
-
-        work_item = WorkItem(
-            number=number,
-            type=item_type,
-            customer=customer,
-            technician=technician,
-            notes=notes
-        )
-
-        db.session.add(work_item)
-        db.session.commit()
-
-        flash("Work Item created successfully!", "success")
-
-        return redirect(url_for("main.dashboard"))
-
-    return render_template("new_work_item.html")
 
 
 @main.route("/archive/<int:item_id>", methods=["POST"])
@@ -1337,15 +1324,27 @@ def get_receiving_status(work_item):
 
 
 def notify_when_green(work_item, previous_status):
+
+    # Do not notify users about archived Work Items.
+    if work_item.is_archived:
+        return
+
+    # Do not notify users about unverified Work Items.
+    if work_item.requires_order_verification:
+        return
+
     new_status = get_receiving_status(work_item)
 
-    # Notify only when the work item changes to Green.
+    # Only notify when the receiving status changes to Green.
     if previous_status == "Green" or new_status != "Green":
         return
 
-    active_users = User.query.filter_by(is_active=True).all()
+    active_users = User.query.filter_by(
+        is_active=True
+    ).all()
 
     for user in active_users:
+
         notification = Notification(
             user_id=user.id,
             work_item_id=work_item.id,
@@ -1496,3 +1495,1264 @@ def check_notifications():
             for notification in unread_notifications
         ]
     })
+
+
+@main.route("/import-pbs-orders", methods=["POST"])
+@login_required
+def import_pbs_orders():
+    uploaded_file = request.files.get("excel_file")
+
+    if not uploaded_file or not uploaded_file.filename:
+        flash("Please select a PBS Order Excel file.", "danger")
+        return redirect(url_for("main.dashboard"))
+
+    if not uploaded_file.filename.lower().endswith(".xlsx"):
+        flash("Only Excel (.xlsx) files are supported.", "danger")
+        return redirect(url_for("main.dashboard"))
+
+    try:
+        # Limit uploads to 10 MB.
+        file_bytes = uploaded_file.stream.read(10 * 1024 * 1024 + 1)
+
+        if len(file_bytes) > 10 * 1024 * 1024:
+            raise ValueError("Excel file exceeds the 10 MB limit.")
+
+        # Open the Excel workbook.
+        workbook = load_workbook(
+            io.BytesIO(file_bytes),
+            read_only=True,
+            data_only=True
+        )
+
+        try:
+            worksheet = workbook.worksheets[0]
+
+            # Convert Excel cell values into strings so that
+            # the existing import logic can process them.
+            rows = []
+
+            for excel_row in worksheet.iter_rows(values_only=True):
+                row = []
+
+                for value in excel_row:
+                    if value is None:
+                        row.append("")
+                    elif isinstance(value, float) and value.is_integer():
+                        row.append(str(int(value)))
+                    else:
+                        row.append(str(value).strip())
+
+                rows.append(row)
+
+        finally:
+            workbook.close()
+
+        if len(rows) < 5:
+            raise ValueError("The Excel file does not contain enough rows.")
+
+        # Line 2 contains the PBS Order Number.
+        order_header = rows[1][0].strip()
+
+        if not order_header.lower().startswith("order #"):
+            raise ValueError("PBS Order Number not found on line 2.")
+
+        order_number = order_header.split("#", 1)[1].strip()
+
+        if not order_number:
+            raise ValueError("PBS Order Number is empty.")
+
+        # Line 4 contains the column headings.
+        headings = [
+            heading.strip().lower()
+            for heading in rows[3]
+        ]
+
+        required_columns = [
+            "reference",
+            "part number",
+            "description",
+            "customer name",
+            "source",
+            "qty"
+        ]
+
+        for column in required_columns:
+            if column not in headings:
+                raise ValueError(
+                    f"Required Excel column is missing: {column}"
+                )
+
+        columns = {
+            name: headings.index(name)
+            for name in required_columns
+        }
+
+
+        # Combine customer names that PBS splits across rows.
+        customer_column = columns["customer name"]
+        reference_column = columns["reference"]
+        part_column = columns["part number"]
+
+        cleaned_rows = []
+        previous_part_row = None
+
+        for line_number, row in enumerate(rows[4:], start=5):
+            nonempty_columns = [
+                index
+                for index, value in enumerate(row)
+                if value.strip()
+            ]
+
+            # A customer continuation row has text only
+            # in the Customer Name column.
+            is_customer_continuation = (
+                nonempty_columns == [customer_column]
+            )
+
+            if is_customer_continuation:
+                if previous_part_row is None:
+                    raise ValueError(
+                        f"Line {line_number}: Customer name "
+                        "continuation has no preceding part."
+                    )
+
+                additional_name = row[customer_column].strip()
+
+                previous_part_row[customer_column] += (
+                    " " + additional_name
+                )
+
+                continue
+
+            cleaned_rows.append(row)
+
+            # Only a valid-looking part row can receive
+            # a customer name continuation.
+            if (
+                len(row) > max(reference_column, part_column)
+                and row[reference_column].strip()
+                and row[part_column].strip()
+            ):
+                previous_part_row = row
+            else:
+                previous_part_row = None
+
+        # Replace the original data rows with cleaned rows.
+        rows = rows[:4] + cleaned_rows
+
+        # Group parts by Work Item Type, Number and Supplier.
+        grouped_orders = defaultdict(list)
+        customers = {}
+
+        for line_number, row in enumerate(rows[4:], start=5):
+            # Ignore blank lines and the report totals line.
+            if not any(cell.strip() for cell in row):
+                continue
+
+            # Ignore stock orders, notes continuation rows
+            # and other rows without a Work Item and Part Number.
+            if (
+                not row[columns["reference"]].strip()
+                or not row[columns["part number"]].strip()
+            ):
+                continue
+
+            def field(name):
+                index = columns[name]
+                return row[index].strip() if index < len(row) else ""
+
+            reference = field("reference")
+            part_number = field("part number")
+            description = field("description")
+            customer = field("customer name").upper()
+            supplier = "GM"
+            quantity_text = field("qty")
+
+            if "#" not in reference:
+                raise ValueError(
+                    f"Line {line_number}: Invalid Reference: {reference}"
+                )
+
+            item_type, item_number = [
+                value.strip()
+                for value in reference.split("#", 1)
+            ]
+
+            valid_types = {
+                "work order": "Work Order",
+                "estimate": "Estimate",
+                "invoice": "Invoice",
+                "quote": "Quote"
+            }
+
+            item_type = valid_types.get(item_type.lower())
+
+            if not item_type or not item_number:
+                raise ValueError(
+                    f"Line {line_number}: Invalid Work Item Reference."
+                )
+
+            if not all([
+                part_number,
+                description,
+                customer,
+                supplier,
+                quantity_text
+            ]):
+                raise ValueError(
+                    f"Line {line_number}: Required part information is missing."
+                )
+
+            try:
+                quantity_value = float(quantity_text)
+
+                if (
+                    not quantity_value.is_integer()
+                    or quantity_value <= 0
+                ):
+                    raise ValueError()
+
+                quantity = int(quantity_value)
+
+            except ValueError:
+                raise ValueError(
+                    f"Line {line_number}: Invalid quantity: {quantity_text}"
+                )
+
+            key = (item_type, item_number, supplier)
+
+            # A Work Item should have a consistent customer.
+            customer_key = (item_type, item_number)
+
+            if (
+                customer_key in customers
+                and customers[customer_key] != customer
+            ):
+                raise ValueError(
+                    f"Line {line_number}: Conflicting customer names "
+                    f"for {item_type} #{item_number}."
+                )
+
+            customers[customer_key] = customer
+
+            grouped_orders[key].append({
+                "part_number": part_number,
+                "description": description,
+                "quantity_ordered": quantity
+            })
+
+        if not grouped_orders:
+            raise ValueError("No customer-ordered parts were found in the Excel file.")
+
+        created_items = 0
+        created_orders = 0
+        created_parts = 0
+        skipped_orders = 0
+
+        reconciled_orders = 0
+        updated_customers = 0
+        updated_descriptions = 0
+
+        warnings = []
+
+        # Process each grouped GM Supplier Order.
+        for (item_type, item_number, supplier), parts in grouped_orders.items():
+
+            identifier = (
+                f"{item_type} #{item_number}, "
+                f"GM Order #{order_number}"
+            )
+
+            # Find the matching Work Item.
+            work_item = WorkItem.query.filter_by(
+                number=item_number,
+                type=item_type
+            ).first()
+
+            # Create the Work Item if it does not exist.
+            if not work_item:
+
+                work_item = WorkItem(
+                    number=item_number,
+                    type=item_type,
+                    customer=customers[(item_type, item_number)],
+                    technician=None,
+                    notes="",
+                    requires_order_verification=False
+                )
+
+                db.session.add(work_item)
+                db.session.flush()
+
+                created_items += 1
+
+            # Record the original status and verification flag.
+            previous_status = get_receiving_status(work_item)
+
+            was_unverified = (
+                work_item.requires_order_verification
+            )
+
+            # Find the matching GM Supplier Order.
+            matching_orders = [
+                order
+                for order in work_item.parts_orders
+                if (
+                    order.supplier.strip().upper() == "GM"
+                    and (order.order_number or "").strip()
+                    == order_number
+                )
+            ]
+
+            # Do not guess when multiple orders match.
+            if len(matching_orders) > 1:
+
+                warnings.append(
+                    f"{identifier}: Multiple matching GM "
+                    "Supplier Orders found. "
+                    "Manual review required."
+                )
+
+                skipped_orders += 1
+                continue
+
+            # Replace the placeholder customer name.
+            if work_item.customer.strip().upper() == "<IMPORT CREATED>":
+
+                work_item.customer = customers[
+                    (item_type, item_number)
+                ]
+
+                updated_customers += 1
+
+            # Handle an existing Supplier Order.
+            if matching_orders:
+
+                parts_order = matching_orders[0]
+
+                # Skip orders that have already been verified.
+                if not parts_order.created_from_receipt:
+
+                    skipped_orders += 1
+                    continue
+
+                # Prepare incoming and existing part mappings.
+                incoming_parts = defaultdict(list)
+                existing_parts = defaultdict(list)
+
+                for part_data in parts:
+
+                    normalized_number = (
+                        part_data["part_number"].strip().upper()
+                    )
+
+                    incoming_parts[normalized_number].append(
+                        part_data
+                    )
+
+                for part in parts_order.parts:
+
+                    normalized_number = (
+                        part.part_number.strip().upper()
+                    )
+
+                    existing_parts[normalized_number].append(
+                        part
+                    )
+
+                reconciliation_errors = []
+
+                # Check for duplicate incoming part numbers.
+                for part_number, matches in incoming_parts.items():
+
+                    if len(matches) > 1:
+
+                        reconciliation_errors.append(
+                            f"{identifier}, Part #{part_number}: "
+                            "Multiple matching parts in the "
+                            "PBS Order Report."
+                        )
+
+                # Check existing receipt-created parts.
+                for part_number, matches in existing_parts.items():
+
+                    if len(matches) > 1:
+
+                        reconciliation_errors.append(
+                            f"{identifier}, Part #{part_number}: "
+                            "Multiple matching parts in PartsTrack."
+                        )
+
+                        continue
+
+                    if part_number not in incoming_parts:
+
+                        reconciliation_errors.append(
+                            f"{identifier}, Part #{part_number}: "
+                            "Existing part was not found in "
+                            "the PBS Order Report."
+                        )
+
+                        continue
+
+                    if len(incoming_parts[part_number]) != 1:
+                        continue
+
+                    existing_part = matches[0]
+                    part_data = incoming_parts[part_number][0]
+
+                    # Do not automatically change conflicting
+                    # ordered quantities.
+                    if (
+                        existing_part.quantity_ordered
+                        != part_data["quantity_ordered"]
+                    ):
+
+                        reconciliation_errors.append(
+                            f"{identifier}, Part #{part_number}: "
+                            f"PBS ordered quantity "
+                            f"({part_data['quantity_ordered']}) "
+                            f"differs from PartsTrack "
+                            f"({existing_part.quantity_ordered})."
+                        )
+
+                    if (
+                        existing_part.quantity_received
+                        > part_data["quantity_ordered"]
+                    ):
+
+                        reconciliation_errors.append(
+                            f"{identifier}, Part #{part_number}: "
+                            "Received quantity exceeds the "
+                            "PBS ordered quantity."
+                        )
+
+                # Do not partially reconcile an order
+                # containing conflicting information.
+                if reconciliation_errors:
+
+                    warnings.extend(reconciliation_errors)
+
+                    work_item.requires_order_verification = True
+
+                    skipped_orders += 1
+                    continue
+
+                # Reconcile the original Order Report.
+                for part_number, matches in incoming_parts.items():
+
+                    part_data = matches[0]
+
+                    if part_number in existing_parts:
+
+                        part = existing_parts[part_number][0]
+
+                        # Populate missing descriptions only.
+                        if not (part.description or "").strip():
+
+                            part.description = part_data[
+                                "description"
+                            ]
+
+                            updated_descriptions += 1
+
+                        # Existing received quantities
+                        # remain unchanged.
+
+                    else:
+
+                        # Add parts missing from the receipt.
+                        part = PartLine(
+                            parts_order=parts_order,
+                            part_number=part_data["part_number"],
+                            description=part_data["description"],
+                            quantity_ordered=part_data[
+                                "quantity_ordered"
+                            ],
+                            quantity_received=0,
+                            notes=""
+                        )
+
+                        db.session.add(part)
+
+                        created_parts += 1
+
+                # Mark this Supplier Order as verified.
+                parts_order.created_from_receipt = False
+
+                reconciled_orders += 1
+
+            else:
+
+                # Create a normal GM Supplier Order.
+                parts_order = PartsOrder(
+                    work_item=work_item,
+                    supplier="GM",
+                    order_number=order_number,
+                    notes="",
+                    created_from_receipt=False
+                )
+
+                db.session.add(parts_order)
+
+                created_orders += 1
+
+                # Add all ordered parts.
+                for part_data in parts:
+
+                    part = PartLine(
+                        parts_order=parts_order,
+                        part_number=part_data["part_number"],
+                        description=part_data["description"],
+                        quantity_ordered=part_data[
+                            "quantity_ordered"
+                        ],
+                        quantity_received=0,
+                        notes=""
+                    )
+
+                    db.session.add(part)
+
+                    created_parts += 1
+
+            db.session.flush()
+
+            # Check whether any Supplier Orders still
+            # require verification.
+            work_item.requires_order_verification = any(
+                order.created_from_receipt
+                for order in work_item.parts_orders
+            )
+
+            # Generate a notification if verification is
+            # complete and all ordered parts are received.
+            if (
+                was_unverified
+                and not work_item.requires_order_verification
+                and not work_item.is_archived
+            ):
+
+                # Treat an unverified Work Item as not
+                # previously ready for scheduling.
+                notify_when_green(work_item, "Red")
+
+            elif (
+                not work_item.requires_order_verification
+                and not work_item.is_archived
+            ):
+
+                notify_when_green(
+                    work_item,
+                    previous_status
+                )
+
+        # Save all changes together.
+        db.session.commit()
+
+        flash(
+            f"PBS Order #{order_number} processed successfully. "
+            f"New Work Items: {created_items}, "
+            f"New Supplier Orders: {created_orders}, "
+            f"New Parts: {created_parts}, "
+            f"Reconciled Orders: {reconciled_orders}, "
+            f"Updated Customers: {updated_customers}, "
+            f"Updated Descriptions: {updated_descriptions}, "
+            f"Skipped Orders: {skipped_orders}, "
+            f"Warnings: {len(warnings)}.",
+            "success" if not warnings else "warning"
+        )
+
+        # Display reconciliation warnings.
+        for warning in warnings:
+            flash(warning, "warning")
+
+    except (ValueError, InvalidFileException, BadZipFile) as error:
+        db.session.rollback()
+        flash(f"PBS import failed: {error}", "danger")
+
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("PBS Order Import failed")
+        flash(
+            "An unexpected error occurred while importing the PBS order.",
+            "danger"
+        )
+
+    return redirect(url_for("main.dashboard"))
+
+
+def read_pbs_receipt(file_bytes):
+
+    workbook = load_workbook(
+        io.BytesIO(file_bytes),
+        read_only=True,
+        data_only=True
+    )
+
+    try:
+        worksheet = workbook.worksheets[0]
+
+        rows = list(
+            worksheet.iter_rows(values_only=True)
+        )
+
+    finally:
+        workbook.close()
+
+    if len(rows) < 6:
+        raise ValueError(
+            "The Excel file does not contain enough rows."
+        )
+
+    def cell_text(value):
+        if value is None:
+            return ""
+
+        if isinstance(value, float) and value.is_integer():
+            return str(int(value))
+
+        return str(value).strip()
+
+    # Extract receipt information from row 4.
+    receipt_header = cell_text(rows[3][0])
+
+    header_match = re.search(
+        r"Receipt:\s*(.*?)\s+Received:\s*"
+        r"(\d{1,2}/\d{1,2}/\d{4})",
+        receipt_header,
+        re.IGNORECASE
+    )
+
+    if not header_match:
+        raise ValueError(
+            "PBS Receipt information was not found."
+        )
+
+    receipt_name = header_match.group(1).strip()
+
+    receipt_date = datetime.strptime(
+        header_match.group(2),
+        "%m/%d/%Y"
+    ).date()
+
+    # Row 5 contains the column headings.
+    headings = [
+        cell_text(value).lower()
+        for value in rows[4]
+    ]
+
+    required_columns = [
+        "order #",
+        "part number",
+        "type",
+        "reference",
+        "ordered",
+        "receipted",
+        "cancelled"
+    ]
+
+    for column in required_columns:
+        if column not in headings:
+            raise ValueError(
+                f"Required Excel column is missing: {column}"
+            )
+
+    columns = {
+        name: headings.index(name)
+        for name in required_columns
+    }
+
+    # Convert PBS reference types to PartsTrack types.
+    valid_types = {
+        "est": "Estimate",
+        "estimate": "Estimate",
+        "inv": "Invoice",
+        "invoice": "Invoice",
+        "wo": "Work Order",
+        "ro": "Work Order",
+        "work order": "Work Order",
+        "quote": "Quote",
+        "quo": "Quote",
+        "qt": "Quote"
+    }
+
+    records = []
+
+    for line_number, row in enumerate(rows[5:], start=6):
+
+        def field(name):
+            index = columns[name]
+
+            if index >= len(row):
+                return ""
+
+            return cell_text(row[index])
+
+        # Only process customer-ordered SOP parts.
+        if field("type").upper() != "SOP":
+            continue
+
+        order_number = field("order #")
+        part_number = field("part number").upper()
+        reference = field("reference")
+
+        if not order_number:
+            raise ValueError(
+                f"Row {line_number}: Missing Order Number."
+            )        
+
+        if not part_number or ":" not in reference:
+            raise ValueError(
+                f"Row {line_number}: Invalid part or reference."
+            )
+
+        reference_type, item_number = [
+            value.strip()
+            for value in reference.split(":", 1)
+        ]
+
+        item_type = valid_types.get(
+            reference_type.lower()
+        )
+
+        if not item_type or not item_number:
+            raise ValueError(
+                f"Row {line_number}: Invalid Work Item "
+                f"Reference: {reference}"
+            )
+
+        def read_quantity(name):
+            value = field(name)
+
+            try:
+                quantity = Decimal(value)
+
+                if (
+                    not quantity.is_finite()
+                    or quantity < 0
+                    or quantity != quantity.to_integral_value()
+                ):
+                    raise ValueError()
+
+                return int(quantity)
+
+            except (InvalidOperation, ValueError):
+                raise ValueError(
+                    f"Row {line_number}: Invalid "
+                    f"{name} quantity: {value}"
+                )
+
+        quantity_ordered = read_quantity("ordered")
+        quantity_receipted = read_quantity("receipted")
+        quantity_cancelled = read_quantity("cancelled")
+
+        records.append({
+            "line_number": line_number,
+            "order_number": order_number,
+            "item_type": item_type,
+            "item_number": item_number,
+            "part_number": part_number,
+            "quantity_ordered": quantity_ordered,
+            "quantity_receipted": quantity_receipted,
+            "quantity_cancelled": quantity_cancelled
+        })
+
+    if not records:
+        raise ValueError(
+            "No SOP parts were found in the Receipt Report."
+        )
+
+    return receipt_name, receipt_date, records
+
+
+def generate_receipt_fingerprint(receipt_date, records):
+
+    normalized_records = []
+
+    for record in records:
+        normalized_records.append({
+            "order_number": record["order_number"].strip(),
+            "item_type": record["item_type"].strip().upper(),
+            "item_number": record["item_number"].strip(),
+            "part_number": record["part_number"].strip().upper(),
+            "quantity_ordered": record["quantity_ordered"],
+            "quantity_receipted": record["quantity_receipted"],
+            "quantity_cancelled": record["quantity_cancelled"]
+        })
+
+    normalized_records.sort(
+        key=lambda record: (
+            record["order_number"],
+            record["item_type"],
+            record["item_number"],
+            record["part_number"],
+            record["quantity_ordered"],
+            record["quantity_receipted"],
+            record["quantity_cancelled"]
+        )
+    )
+
+    fingerprint_data = {
+        "receipt_date": receipt_date.isoformat(),
+        "records": normalized_records
+    }
+
+    serialized_data = json.dumps(
+        fingerprint_data,
+        sort_keys=True,
+        separators=(",", ":")
+    )
+
+    return hashlib.sha256(
+        serialized_data.encode("utf-8")
+    ).hexdigest()
+
+
+@main.route("/import-pbs-receipts", methods=["POST"])
+@login_required
+def import_pbs_receipts():
+
+    uploaded_file = request.files.get("excel_file")
+
+    if not uploaded_file or not uploaded_file.filename:
+        flash("Please select a PBS Receipt Excel file.", "danger")
+        return redirect(url_for("main.dashboard"))
+
+    if not uploaded_file.filename.lower().endswith(".xlsx"):
+        flash("Only Excel (.xlsx) files are supported.", "danger")
+        return redirect(url_for("main.dashboard"))
+
+    try:
+        # Limit uploads to 10 MB.
+        file_bytes = uploaded_file.stream.read(
+            10 * 1024 * 1024 + 1
+        )
+
+        if len(file_bytes) > 10 * 1024 * 1024:
+            raise ValueError(
+                "Excel file exceeds the 10 MB limit."
+            )
+
+        # Read and validate the Receipt Report.
+        receipt_name, receipt_date, records = read_pbs_receipt(
+            file_bytes
+        )
+
+        # Generate the unique receipt fingerprint.
+        fingerprint = generate_receipt_fingerprint(
+            receipt_date,
+            records
+        )
+
+        # Check whether this receipt has already been imported.
+        existing_receipt = ReceiptImport.query.filter_by(
+            fingerprint=fingerprint
+        ).first()
+
+        if existing_receipt:
+            flash(
+                f"This receipt has already been imported "
+                f"by {existing_receipt.imported_by} on "
+                f"{existing_receipt.imported_at:%Y-%m-%d %H:%M} UTC. "
+                "No quantities were updated.",
+                "warning"
+            )
+
+            return redirect(url_for("main.dashboard"))
+
+        warnings = []
+        updated_part_ids = set()
+        affected_work_items = {}
+
+        work_items_created = 0
+        supplier_orders_created = 0
+        part_lines_created = 0
+
+        skipped = 0
+        total_received = 0
+
+        # Register the receipt within the same transaction.
+        receipt_import = ReceiptImport(
+            receipt_name=receipt_name,
+            receipt_date=receipt_date,
+            fingerprint=fingerprint,
+            filename=uploaded_file.filename,
+            imported_by=current_user.username,
+            parts_updated=0
+        )
+
+        db.session.add(receipt_import)
+        db.session.flush()
+
+        # Process each SOP receipt record.
+        for record in records:
+
+            item_type = record["item_type"]
+            item_number = record["item_number"]
+            order_number = record["order_number"]
+            part_number = record["part_number"]
+
+            quantity_ordered = record["quantity_ordered"]
+            quantity_receipted = record["quantity_receipted"]
+            quantity_cancelled = record["quantity_cancelled"]
+
+            identifier = (
+                f"{item_type} #{item_number}, "
+                f"GM Order #{order_number}, "
+                f"Part #{part_number}"
+            )
+
+            # Warn about cancellations.
+            if quantity_cancelled > 0:
+                warnings.append(
+                    f"{identifier}: PBS reports "
+                    f"{quantity_cancelled} cancelled. "
+                    "Ordered quantity was not changed."
+                )
+
+            # Validate quantities before creating records.
+            if quantity_ordered <= 0:
+                warnings.append(
+                    f"{identifier}: Invalid ordered quantity."
+                )
+
+                skipped += 1
+                continue
+
+            if quantity_receipted > quantity_ordered:
+                warnings.append(
+                    f"{identifier}: Receipted quantity exceeds "
+                    "the PBS ordered quantity."
+                )
+
+                skipped += 1
+                continue
+
+            # Find the matching Work Item.
+            work_item = WorkItem.query.filter_by(
+                number=item_number,
+                type=item_type
+            ).first()
+
+            # Create the Work Item if it does not exist.
+            if not work_item:
+
+                work_item = WorkItem(
+                    number=item_number,
+                    type=item_type,
+                    customer="<Import Created>",
+                    requires_order_verification=True,
+                    is_archived=False
+                )
+
+                db.session.add(work_item)
+                db.session.flush()
+
+                work_items_created += 1
+
+            # Record the original receiving status before
+            # making any changes to the Work Item.
+            if work_item.id not in affected_work_items:
+
+                affected_work_items[work_item.id] = (
+                    work_item,
+                    get_receiving_status(work_item)
+                )
+
+            # Find the matching GM Supplier Order.
+            matching_orders = [
+                order
+                for order in work_item.parts_orders
+                if (
+                    order.supplier.strip().upper() == "GM"
+                    and (order.order_number or "").strip()
+                    == order_number
+                )
+            ]
+
+            # Do not guess when multiple orders match.
+            if len(matching_orders) > 1:
+
+                warnings.append(
+                    f"{identifier}: Multiple matching GM "
+                    "Supplier Orders found. "
+                    "Manual review required."
+                )
+
+                skipped += 1
+                continue
+
+            # Create a missing GM Supplier Order.
+            if not matching_orders:
+
+                parts_order = PartsOrder(
+                    work_item=work_item,
+                    supplier="GM",
+                    order_number=order_number,
+                    created_from_receipt=True
+                )
+
+                db.session.add(parts_order)
+                db.session.flush()
+
+                work_item.requires_order_verification = True
+
+                supplier_orders_created += 1
+
+            else:
+
+                parts_order = matching_orders[0]
+
+            # Find the part within the matching GM order.
+            matching_parts = [
+                part
+                for part in parts_order.parts
+                if (
+                    part.part_number.strip().upper()
+                    == part_number.strip().upper()
+                )
+            ]
+
+            # Do not guess when multiple parts match.
+            if len(matching_parts) > 1:
+
+                warnings.append(
+                    f"{identifier}: Multiple matching parts "
+                    "found. Manual review required."
+                )
+
+                skipped += 1
+                continue
+
+            # Create a missing Part Line.
+            if not matching_parts:
+
+                part = PartLine(
+                    parts_order=parts_order,
+                    part_number=part_number,
+                    description="",
+                    quantity_ordered=quantity_ordered,
+                    quantity_received=0
+                )
+
+                db.session.add(part)
+                db.session.flush()
+
+                parts_order.created_from_receipt = True
+                work_item.requires_order_verification = True
+
+                part_lines_created += 1
+
+            else:
+
+                part = matching_parts[0]
+
+            # Compare the ordered quantities.
+            if quantity_ordered != part.quantity_ordered:
+
+                # Require verification before allowing
+                # ready-for-scheduling notifications.
+                parts_order.created_from_receipt = True
+                work_item.requires_order_verification = True
+
+                warnings.append(
+                    f"{identifier}: PBS ordered quantity "
+                    f"({quantity_ordered}) differs from "
+                    f"PartsTrack ({part.quantity_ordered}). "
+                    "Order verification required. "
+                    "Ordered quantity was not changed."
+                )
+
+            # Nothing to receive on this record.
+            if quantity_receipted == 0:
+                continue
+
+            # Calculate the new received quantity.
+            new_quantity_received = (
+                part.quantity_received + quantity_receipted
+            )
+
+            # Prevent receiving more than was ordered.
+            if new_quantity_received > part.quantity_ordered:
+
+                warnings.append(
+                    f"{identifier}: Receiving "
+                    f"{quantity_receipted} additional part(s) "
+                    "would exceed the ordered quantity. "
+                    f"Currently received: "
+                    f"{part.quantity_received}, "
+                    f"Ordered: {part.quantity_ordered}. "
+                    "Part was not updated."
+                )
+
+                skipped += 1
+                continue
+
+            # Apply the received quantity.
+            part.quantity_received = new_quantity_received
+
+            updated_part_ids.add(part.id)
+            total_received += quantity_receipted
+
+        # Complete the receipt import history.
+        receipt_import.parts_updated = len(updated_part_ids)
+
+        receipt_import.warnings = (
+            "\n".join(warnings) if warnings else None
+        )
+
+        # Generate notifications only for verified Work Items.
+        for work_item, previous_status in affected_work_items.values():
+
+            if work_item.requires_order_verification:
+                continue
+
+            notify_when_green(work_item, previous_status)
+
+        # Save receiving updates, notifications and
+        # receipt history together.
+        db.session.commit()
+
+        flash(
+            f"PBS Receipt '{receipt_name}' processed successfully. "
+            f"Work Items created: {work_items_created}, "
+            f"Supplier Orders created: {supplier_orders_created}, "
+            f"Part Lines created: {part_lines_created}, "
+            f"Parts received: {len(updated_part_ids)}, "
+            f"Total quantity received: {total_received}, "
+            f"Skipped records: {skipped}, "
+            f"Warnings: {len(warnings)}.",
+            "success" if not warnings else "warning"
+        )
+
+        # Display the first 10 warnings on the dashboard.
+        for warning in warnings[:10]:
+            flash(warning, "warning")
+
+        if len(warnings) > 10:
+            flash(
+                f"{len(warnings) - 10} additional warnings "
+                "were saved in the receipt import history.",
+                "warning"
+            )
+
+    except (ValueError, InvalidFileException, BadZipFile) as error:
+
+        db.session.rollback()
+
+        flash(
+            f"PBS Receipt Import failed: {error}",
+            "danger"
+        )
+
+    except IntegrityError:
+
+        db.session.rollback()
+
+        flash(
+            "The receipt could not be saved because of a "
+            "database constraint conflict. It may have "
+            "already been imported by another user. "
+            "No receiving changes were saved.",
+            "warning"
+        )
+
+    except Exception:
+
+        db.session.rollback()
+
+        current_app.logger.exception(
+            "PBS Receipt Import failed"
+        )
+
+        flash(
+            "An unexpected error occurred while "
+            "importing the PBS receipt.",
+            "danger"
+        )
+
+    return redirect(url_for("main.dashboard"))
+
+@main.route("/receipt-import-history")
+@login_required
+def receipt_import_history():
+
+    # Get search and filter values.
+    search_query = request.args.get("search", "").strip()
+    receipt_date_filter = request.args.get("receipt_date", "").strip()
+    warnings_only = request.args.get("warnings_only") == "1"
+    page = request.args.get("page", 1, type=int)
+
+    # Calculate overall statistics.
+    total_imports = ReceiptImport.query.count()
+
+    imports_with_warnings = ReceiptImport.query.filter(
+        ReceiptImport.warnings.isnot(None),
+        ReceiptImport.warnings != ""
+    ).count()
+
+    successful_imports = total_imports - imports_with_warnings
+
+    # Build the history query.
+    query = ReceiptImport.query
+
+    # Search by receipt name, filename or username.
+    if search_query:
+        search_pattern = f"%{search_query}%"
+
+        query = query.filter(
+            db.or_(
+                ReceiptImport.receipt_name.ilike(search_pattern),
+                ReceiptImport.filename.ilike(search_pattern),
+                ReceiptImport.imported_by.ilike(search_pattern)
+            )
+        )
+
+    # Filter by PBS receipt date.
+    if receipt_date_filter:
+        try:
+            selected_date = date.fromisoformat(
+                receipt_date_filter
+            )
+
+            query = query.filter(
+                ReceiptImport.receipt_date == selected_date
+            )
+
+        except ValueError:
+            flash("Invalid receipt date.", "warning")
+
+            return redirect(
+                url_for("main.receipt_import_history")
+            )
+
+    # Show only imports containing warnings.
+    if warnings_only:
+        query = query.filter(
+            ReceiptImport.warnings.isnot(None),
+            ReceiptImport.warnings != ""
+        )
+
+    # Display newest imports first.
+    pagination = query.order_by(
+        ReceiptImport.imported_at.desc(),
+        ReceiptImport.id.desc()
+    ).paginate(
+        page=max(page, 1),
+        per_page=25,
+        error_out=False
+    )
+
+    receipt_imports = pagination.items
+
+    return render_template(
+        "receipt_import_history.html",
+        receipt_imports=receipt_imports,
+        pagination=pagination,
+        total_imports=total_imports,
+        successful_imports=successful_imports,
+        imports_with_warnings=imports_with_warnings,
+        search_query=search_query,
+        receipt_date_filter=receipt_date_filter,
+        warnings_only=warnings_only
+    )
