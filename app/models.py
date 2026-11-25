@@ -36,6 +36,12 @@ class WorkItem(db.Model):
         nullable=False
     )
 
+    requires_order_verification = db.Column(
+        db.Boolean,
+        default=False,
+        nullable=False
+    )
+
     created_at = db.Column(
         db.DateTime,
         default=lambda: datetime.now(timezone.utc),
@@ -72,6 +78,12 @@ class PartsOrder(db.Model):
     )
 
     notes = db.Column(db.Text, nullable=True)
+
+    created_from_receipt = db.Column(
+        db.Boolean,
+        default=False,
+        nullable=False
+    )    
 
     created_at = db.Column(
         db.DateTime,
@@ -224,7 +236,10 @@ class Notification(db.Model):
 
     work_item = db.relationship(
         "WorkItem",
-        backref="notifications"
+        backref=db.backref(
+            "notifications",
+            cascade="all, delete-orphan"
+        )
     )
 
     def __repr__(self):
