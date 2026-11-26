@@ -113,6 +113,12 @@ Work Items, supplier orders, and part lines.
 Keep your local database backed up. If you are using real dealership
 data, protect the database file and avoid sharing it in GitHub.
 
+## Remote Database Backup
+Do backup:
+ssh partstrack "sudo systemctl start partstrack-backup.service"
+To confirm if was created:
+ssh partstrack "ls -lht ~/PartsTrack/backups/ | head -5"
+
 ## GitHub Notes
 
 Before pushing the project to GitHub:
